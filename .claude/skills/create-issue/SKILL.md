@@ -2,6 +2,14 @@
 
 Create standardized GitHub issues for the agents repository.
 
+## Before You Write
+
+**Clear Thinking First (P3):** Before creating an issue, answer these questions:
+1. What is the user's actual goal? (P1: User Centricity)
+2. Can this be solved with code or CLI instead of an agent task? (P11: Goal → Code → CLI → Prompts → Agents)
+3. What does "done" look like? (P7: Spec / Test / Evals First)
+4. What should be measured to verify success? (P15: Science as Meta-Loop)
+
 ## Usage
 
 Invoke this skill to create a new GitHub issue with consistent formatting and labeling.
@@ -42,21 +50,27 @@ Use this template for the issue body (omit sections that don't apply):
 
 ```markdown
 ## Summary
-<!-- 1-3 sentences describing the issue -->
+<!-- 1-3 sentences describing the issue. Start with the user goal (P1). -->
 
 ## Acceptance Criteria
+<!-- Measurable criteria. What does "done" look like? (P7: Spec/Test/Evals First) -->
 - [ ] Criterion 1
 - [ ] Criterion 2
 - [ ] Criterion 3
 
+## Verification
+<!-- How will you measure success? (P15: Science as Meta-Loop) -->
+<!-- What command(s) prove this works? (P10: CLI as Interface) -->
+
 ## Technical Notes
 <!-- Implementation details, constraints, references -->
+<!-- Apply decision hierarchy: code > CLI > prompts > agents (P11) -->
+
+## Design Principles
+<!-- Which of the 16 principles apply and how? List 2-4 most relevant. -->
 
 ## Agent Assignment
 <!-- Which agent(s) should work on this: orchestrator, engineer, test-writer, reviewer, issue-creator, judge -->
-
-## Labels
-<!-- List applied labels -->
 ```
 
 ## How to Create
@@ -85,9 +99,12 @@ EOF
 
 ## Guidelines
 
-1. Titles should be concise and descriptive
-2. Every issue needs at least one acceptance criterion
-3. Epics should list child issues with checkboxes
-4. Assign agent roles when the responsible agent is known
-5. Apply priority labels to non-epic issues
-6. Link related issues using `#N` references
+1. **Clear Thinking First** — Clarify the problem before writing the issue (P3)
+2. Every issue needs at least one measurable acceptance criterion (P7)
+3. Include a Verification section — how do you prove it works? (P15)
+4. Each issue should do one thing well (P8: UNIX Philosophy)
+5. Prefer deterministic solutions: code > CLI > prompts > agents (P5, P11)
+6. Epics list child issues with checkboxes; child issues link back to parent
+7. Assign agent roles when the responsible agent is known (P14)
+8. Apply priority labels to non-epic issues
+9. Agents must be allowed to say "I don't know" or "this needs human input" (P16)
