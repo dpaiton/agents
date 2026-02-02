@@ -1,0 +1,4 @@
+# Code owners file
+# This ensures that @dpaiton must approve all pull requests
+
+* @dpaiton
