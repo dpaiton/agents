@@ -39,27 +39,47 @@ Goal → Code → CLI → Prompts → Agents
 
 ## Project Overview
 
-Multi-agent orchestration meta-repository. Coordinates AI agents (orchestrator, engineer, test-writer, reviewer, judge) to develop software with built-in evaluation. GitHub issues are the primary coordination mechanism.
+Multi-agent orchestration meta-repository. Coordinates AI agents (orchestrator, engineer, test-writer, reviewer, judge) to develop software with built-in evaluation.
+
+**Primary interaction model:** Comment on GitHub issues and PRs, then run `eco sync`. Agents parse comments, act in parallel (edit issue bodies, push PR code, update descriptions), and resolve comment threads when done.
 
 Arcade/MCP authorization handles OAuth-based write permissions for GitHub tools via the Arcade API.
 
 ## Commands
 
 ```bash
+# Primary workflow: sync comments on issues/PRs
+eco sync                     # Process all unresolved comments
+eco sync --issue 42          # Just this issue
+eco sync --pr 18             # Just this PR
+eco sync --dry-run           # Show plan without executing
+
+# Run a task through the orchestration pipeline
+eco run "Add input validation"
+eco run --issue 42
+
+# Deploy an agent on an issue/PR (long-running)
+eco deploy --issue 42 --watch
+
+# Token cost estimation
+eco cost --pr 18
+
+# Show running agents and token usage
+eco status
+
 # Install dependencies
 uv sync
 
 # Run tests
-uv run pytest
+uv run pytest                           # Unit tests
+uv run pytest -m integration            # Integration tests
+eco test --integration                  # Same, via eco
 
 # Run linter
 uv run ruff check .
 
 # Run authorization for all configured services
 python authorize_arcade.py
-
-# Authorize a specific service only
-python authorize_arcade.py github
 
 # Set up GitHub branch protection rules
 ./.github/scripts/setup-branch-protection.sh
@@ -70,13 +90,21 @@ python authorize_arcade.py github
 Deterministic scaffolding around probabilistic models:
 
 ```
-User goal
-    → Orchestrator (deterministic routing: pattern match first, LLM fallback)
-        → Test-Writer (specs/tests before code)
-        → Engineer (code before prompts)
-        → Reviewer (deterministic rubrics)
-        → Judge (structured evaluation, ensemble aggregation)
-    → Memory (captured in issues/docs)
+User comments on issue/PR
+    → eco sync (fetches unresolved comments via gh CLI)
+    → Classify intent per comment (pattern match first, LLM fallback)
+    → Parallel execution:
+        ├─ gh issue edit (update issue body)
+        ├─ git commit + push (change PR code)
+        ├─ gh pr edit (update PR description)
+        └─ gh comment (reply to questions)
+    → Resolve comment threads (GraphQL resolveReviewThread)
+    → Post summary
+
+Execution modes:
+    Local:  eco sync / eco run / eco deploy
+    Remote: eco remote run (GCP, auto-shutdown)
+    CI:     GitHub Actions (@claude mentions)
 ```
 
 **authorize_arcade.py** handles service auth:
