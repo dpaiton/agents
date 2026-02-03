@@ -113,6 +113,14 @@ Execution modes:
 3. Authorizes tools via `Arcade.tools.authorize()` (triggers OAuth)
 4. Verifies connection via each service's verify tool
 
+## Git & PR Guidelines
+
+- **Always rebase, never merge.** Use `git rebase origin/main` to resolve conflicts. This keeps PR diffs clean and reviewable.
+- **Small, isolated commits.** Each commit should be one logical change. If a commit message needs "and", split it.
+- **Minimal PRs.** A PR should do one thing. If an issue requires changes to unrelated areas, open multiple PRs and reference the issue from each. Prefer multiple small PRs that can be tested and reviewed independently over one large PR.
+- **PR scope test:** Does this PR address a single idea or component that can be reviewed and tested in isolation? If not, split it.
+- **Commit history is documentation.** Write descriptive commit messages. Future readers will `git log` before they read docs.
+
 ## Environment Configuration
 
 Required in `.env`:
