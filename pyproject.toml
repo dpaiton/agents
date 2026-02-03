@@ -8,3 +8,22 @@ dependencies = [
     "arcadepy>=1.10.0",
     "python-dotenv>=1.0.0",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.8.0",
+    "anthropic>=0.40.0",
+    "google-genai>=1.0.0",
+]
+
+[project.scripts]
+eco = "orchestration.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["orchestration/tests"]
+markers = ["integration: end-to-end integration tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
