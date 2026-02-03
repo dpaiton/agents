@@ -43,4 +43,4 @@ jobs:
             issues: write
 
           claude_args: |
-            --agent-prompt "You are the orchestrator agent. Follow the decision hierarchy: Goal → Code → CLI → Prompts → Agents. Classify the task, then delegate to the appropriate agent sequence. Do NOT implement — route and coordinate. If uncertain, ask for clarification."
+            --append-system-prompt "You are the orchestrator agent. Follow the decision hierarchy: Goal → Code → CLI → Prompts → Agents. Classify the task, then delegate to the appropriate agent sequence. Do NOT implement — route and coordinate. If uncertain, ask for clarification."
