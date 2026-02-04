@@ -13,6 +13,9 @@ Usage:
     agents rubric show code_review
     agents sync                            # fetch/prune, clean merged worktrees, rebase remaining
     agents sync --dry-run                  # preview sync actions without making changes
+    agents cost history                    # show historical token usage by day
+    agents cost history --pr 18            # filter by PR number
+    agents cost log --model claude-sonnet-4-20250514 --input-tokens 1500 --output-tokens 800 --command route
 
     eco route "Add a login page"           # economy mode: uses smaller, cheaper models
     eco judge --response r.txt --ref ref.txt --rubric code_review  # economy mode
@@ -28,7 +31,16 @@ import json
 import os
 import subprocess
 import sys
+from dataclasses import asdict
+from datetime import datetime, timezone
 from typing import Any
+
+from orchestration.cost import (
+    CostCalculator,
+    DailySummary,
+    UsageRecord,
+    UsageStore,
+)
 
 
 def format_output(data: Any, output_format: str) -> str:
@@ -637,6 +649,188 @@ def setup_sync_parser(subparsers: argparse._SubParsersAction) -> None:
 
 
 # -----------------------------------------------------------------------------
+# Subcommand: cost
+# -----------------------------------------------------------------------------
+
+def _print_history_table(summaries: list[DailySummary]) -> None:
+    """Print a formatted text table of daily usage summaries."""
+    print("Token Usage History")
+    print("===================")
+    print()
+
+    header = (
+        f"{'Date':<12} {'Input Tokens':>13}  {'Output Tokens':>14}  "
+        f"{'Est. Cost':>10}  {'Records':>7}  Models"
+    )
+    print(header)
+    print(
+        f"{'-' * 10}  {'-' * 13}  {'-' * 14}  "
+        f"{'-' * 10}  {'-' * 7}  {'-' * 6}"
+    )
+
+    for s in summaries:
+        models_str = ", ".join(s.models)
+        print(
+            f"{s.date:<12}"
+            f"{s.total_input_tokens:>13,}  "
+            f"{s.total_output_tokens:>14,}  "
+            f"${s.estimated_cost_usd:>9.4f}  "
+            f"{s.record_count:>7}   "
+            f"{models_str}"
+        )
+
+    total_input = sum(s.total_input_tokens for s in summaries)
+    total_output = sum(s.total_output_tokens for s in summaries)
+    total_cost = sum(s.estimated_cost_usd for s in summaries)
+    total_records = sum(s.record_count for s in summaries)
+
+    print()
+    print(
+        f"{'-' * 10}  {'-' * 13}  {'-' * 14}  "
+        f"{'-' * 10}  {'-' * 7}"
+    )
+    print(
+        f"{'Total':<12}"
+        f"{total_input:>13,}  "
+        f"{total_output:>14,}  "
+        f"${total_cost:>9.4f}  "
+        f"{total_records:>7}"
+    )
+
+
+def cmd_cost_history(args: argparse.Namespace) -> int:
+    """Show historical token usage aggregated by day."""
+    store = UsageStore()
+    records = store.read_filtered(
+        pr=getattr(args, "pr", None),
+        issue=getattr(args, "issue", None),
+        since=getattr(args, "since", None),
+        until=getattr(args, "until", None),
+        command=getattr(args, "command_filter", None),
+    )
+
+    if not records:
+        print("No usage records found.")
+        return 0
+
+    summaries = CostCalculator.summarize_by_day(records)
+
+    if args.format == "json":
+        data = [asdict(s) for s in summaries]
+        grand = {
+            "total_input_tokens": sum(s.total_input_tokens for s in summaries),
+            "total_output_tokens": sum(s.total_output_tokens for s in summaries),
+            "total_cost_usd": round(sum(s.estimated_cost_usd for s in summaries), 4),
+            "total_records": sum(s.record_count for s in summaries),
+        }
+        print(json.dumps({"days": data, "total": grand}, indent=2))
+    else:
+        _print_history_table(summaries)
+
+    return 0
+
+
+def cmd_cost_log(args: argparse.Namespace) -> int:
+    """Record a token usage event."""
+    record = UsageRecord(
+        timestamp=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        model=args.model,
+        input_tokens=args.input_tokens,
+        output_tokens=args.output_tokens,
+        command=args.cmd_name,
+        pr=getattr(args, "pr", None),
+        issue=getattr(args, "issue", None),
+        session_id=getattr(args, "session_id", None),
+    )
+
+    store = UsageStore()
+    store.append(record)
+
+    cost = CostCalculator.estimate_record_cost(record)
+
+    result = {
+        "status": "recorded",
+        "estimated_cost_usd": cost,
+        "model": record.model,
+        "input_tokens": record.input_tokens,
+        "output_tokens": record.output_tokens,
+    }
+
+    print(format_output(result, args.format))
+    return 0
+
+
+def cmd_cost(args: argparse.Namespace) -> int:
+    """Handle cost command without subcommand."""
+    if not args.cost_command:
+        print("Error: cost requires a subcommand (history or log)", file=sys.stderr)
+        print("Usage: agents cost history | agents cost log --model ...", file=sys.stderr)
+        return 1
+    return args.func(args)
+
+
+def setup_cost_parser(subparsers: argparse._SubParsersAction) -> None:
+    """Set up the cost subcommand parser."""
+    parser = subparsers.add_parser(
+        "cost",
+        help="Track and display token usage costs",
+        description="View historical token usage and estimated costs, or record usage events.",
+    )
+
+    cost_subparsers = parser.add_subparsers(
+        dest="cost_command",
+        metavar="COMMAND",
+    )
+
+    # cost history
+    history_parser = cost_subparsers.add_parser(
+        "history",
+        help="Show historical token usage by day",
+    )
+    history_parser.add_argument("--pr", type=int, help="Filter by PR number")
+    history_parser.add_argument("--issue", type=int, help="Filter by issue number")
+    history_parser.add_argument("--since", help="Start date (YYYY-MM-DD)")
+    history_parser.add_argument("--until", help="End date (YYYY-MM-DD)")
+    history_parser.add_argument(
+        "--command", dest="command_filter", help="Filter by command name",
+    )
+    history_parser.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format (default: text)",
+    )
+    history_parser.set_defaults(func=cmd_cost_history)
+
+    # cost log
+    log_parser = cost_subparsers.add_parser(
+        "log",
+        help="Record a token usage event",
+    )
+    log_parser.add_argument("--model", required=True, help="Model identifier")
+    log_parser.add_argument(
+        "--input-tokens", type=int, required=True, help="Input token count",
+    )
+    log_parser.add_argument(
+        "--output-tokens", type=int, required=True, help="Output token count",
+    )
+    log_parser.add_argument(
+        "--command", required=True, dest="cmd_name",
+        help="Command that generated this usage",
+    )
+    log_parser.add_argument("--pr", type=int, help="Associated PR number")
+    log_parser.add_argument("--issue", type=int, help="Associated issue number")
+    log_parser.add_argument("--session-id", help="Session identifier")
+    log_parser.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format (default: text)",
+    )
+    log_parser.set_defaults(func=cmd_cost_log)
+
+
+# -----------------------------------------------------------------------------
 # Main entry point
 # -----------------------------------------------------------------------------
 
@@ -685,6 +879,7 @@ def create_parser() -> argparse.ArgumentParser:
     setup_review_parser(subparsers)
     setup_rubric_parser(subparsers)
     setup_sync_parser(subparsers)
+    setup_cost_parser(subparsers)
 
     return parser
 
@@ -710,9 +905,12 @@ def main() -> int:
         parser.print_help()
         return 0
 
-    # Special handling for rubric command
+    # Special handling for commands with nested subcommands
     if args.command == "rubric":
         return cmd_rubric(args)
+
+    if args.command == "cost":
+        return cmd_cost(args)
 
     # Execute the subcommand
     if hasattr(args, "func"):
