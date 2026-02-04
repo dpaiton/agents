@@ -761,12 +761,21 @@ def cmd_sync_worktrees(args: argparse.Namespace) -> int:
 
 
 def cmd_sync(args: argparse.Namespace) -> int:
-    """Handle sync command, dispatching to subcommands or defaulting to comments."""
+    """Handle sync command, dispatching to subcommands or running both."""
     sync_command = getattr(args, "sync_command", None)
     if sync_command == "worktrees":
         return cmd_sync_worktrees(args)
-    # Default: process comments (bare 'eco sync' or 'eco sync comments')
-    return cmd_sync_comments(args)
+    if sync_command == "comments":
+        return cmd_sync_comments(args)
+    # No subcommand — run both comments then worktrees
+    rc = cmd_sync_comments(args)
+    if not hasattr(args, "verbose"):
+        args.verbose = False
+    if not hasattr(args, "no_push"):
+        args.no_push = False
+    print()
+    wt_rc = cmd_sync_worktrees(args)
+    return rc or wt_rc
 
 
 def setup_sync_parser(subparsers: argparse._SubParsersAction) -> None:
@@ -872,6 +881,305 @@ def setup_sync_parser(subparsers: argparse._SubParsersAction) -> None:
         default=False,
         help="Skip force-pushing rebased branches",
     )
+
+
+# -----------------------------------------------------------------------------
+# Subcommand: run
+# -----------------------------------------------------------------------------
+
+def cmd_run(args: argparse.Namespace) -> int:
+    """Execute a task through the orchestration pipeline."""
+    from orchestration.config import load_config
+    from orchestration.execution import ExecutionEngine
+
+    task = read_input(args)
+    if not task:
+        print("Error: No task description provided", file=sys.stderr)
+        print(
+            'Usage: eco run "task description" or eco run --issue 42',
+            file=sys.stderr,
+        )
+        return 1
+
+    economy = getattr(args, "economy", False)
+    config = load_config()
+    engine = ExecutionEngine(config=config, economy=economy)
+
+    issue = getattr(args, "issue", None)
+    pr = getattr(args, "pr", None)
+    dry_run = getattr(args, "dry_run", False)
+
+    run = engine.plan(task, issue=issue, pr=pr)
+
+    if dry_run:
+        print("Execution plan (dry run):")
+        print(f"  Task:      {run.task}")
+        print(f"  Type:      {run.task_type}")
+        print(f"  Model:     {run.model}")
+        print(f"  Agents:    {' → '.join(run.agent_sequence)}")
+        print(f"  Budget:    {config.token_budget:,} tokens")
+        run = engine.execute(run, dry_run=True)
+        return 0
+
+    print(f"Running: {run.task}")
+    print(f"  Type:   {run.task_type}")
+    print(f"  Model:  {run.model}")
+    print(f"  Agents: {' → '.join(run.agent_sequence)}")
+    print()
+
+    run = engine.execute(run)
+
+    if run.status == "complete":
+        total = run.token_usage["input"] + run.token_usage["output"]
+        print(f"Complete: {total:,} tokens used")
+    elif run.status == "aborted":
+        print(f"Aborted: {run.error}", file=sys.stderr)
+        return 1
+    elif run.status == "failed":
+        print(f"Failed: {run.error}", file=sys.stderr)
+        return 1
+
+    return 0
+
+
+def setup_run_parser(subparsers: argparse._SubParsersAction) -> None:
+    """Set up the run subcommand parser."""
+    parser = subparsers.add_parser(
+        "run",
+        help="Execute a task through the orchestration pipeline",
+        description=(
+            "Route and execute a task through the agent pipeline. "
+            "The task is classified, a model is selected, and agents "
+            "are invoked in sequence."
+        ),
+    )
+    parser.add_argument(
+        "input",
+        nargs="?",
+        help="Task description (can also be provided via stdin)",
+    )
+    parser.add_argument(
+        "--issue",
+        type=int,
+        default=None,
+        help="Act on a specific GitHub issue",
+    )
+    parser.add_argument(
+        "--pr",
+        type=int,
+        default=None,
+        help="Act on a specific GitHub PR",
+    )
+    parser.add_argument(
+        "--review",
+        action="store_true",
+        default=False,
+        help="Review a PR (use with --pr)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=False,
+        help="Show execution plan without running",
+    )
+    parser.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format (default: text)",
+    )
+    parser.set_defaults(func=cmd_run)
+
+
+# -----------------------------------------------------------------------------
+# Subcommand: deploy
+# -----------------------------------------------------------------------------
+
+def cmd_deploy(args: argparse.Namespace) -> int:
+    """Deploy a long-running agent on an issue or PR."""
+    from orchestration.config import load_config
+    from orchestration.execution import DeployEngine
+
+    issue = getattr(args, "issue", None)
+    pr = getattr(args, "pr", None)
+    watch = getattr(args, "watch", False)
+    dry_run = getattr(args, "dry_run", False)
+    economy = getattr(args, "economy", False)
+
+    if not issue and not pr:
+        print("Error: Must specify --issue or --pr", file=sys.stderr)
+        print("Usage: eco deploy --issue 42 [--watch]", file=sys.stderr)
+        return 1
+
+    config = load_config()
+    deploy = DeployEngine(config=config, economy=economy)
+
+    if watch:
+        try:
+            deploy.watch(issue=issue, pr=pr, dry_run=dry_run)
+        except KeyboardInterrupt:
+            print("\nStopped.")
+        return 0
+
+    target = f"issue #{issue}" if issue else f"PR #{pr}"
+    print(f"Deploying agent on {target}...")
+    result = deploy.deploy_once(issue=issue, pr=pr, dry_run=dry_run)
+
+    new = result["new_comments"]
+    if new == 0:
+        print("No new comments to process.")
+    else:
+        success = sum(1 for a in result["actions"] if a.get("success"))
+        print(f"Processed {success}/{new} comment(s)")
+
+    return 0
+
+
+def setup_deploy_parser(subparsers: argparse._SubParsersAction) -> None:
+    """Set up the deploy subcommand parser."""
+    parser = subparsers.add_parser(
+        "deploy",
+        help="Deploy a long-running agent on an issue or PR",
+        description=(
+            "Read latest comments on an issue or PR and act on them. "
+            "Use --watch to continuously poll for new comments."
+        ),
+    )
+    parser.add_argument(
+        "--issue",
+        type=int,
+        default=None,
+        help="Deploy on this GitHub issue",
+    )
+    parser.add_argument(
+        "--pr",
+        type=int,
+        default=None,
+        help="Deploy on this GitHub PR",
+    )
+    parser.add_argument(
+        "--watch",
+        action="store_true",
+        default=False,
+        help="Continuously poll for new comments",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=False,
+        help="Show plan without executing",
+    )
+    parser.set_defaults(func=cmd_deploy)
+
+
+# -----------------------------------------------------------------------------
+# Subcommand: status
+# -----------------------------------------------------------------------------
+
+def cmd_status(args: argparse.Namespace) -> int:
+    """Show running agents, token usage, and model breakdown."""
+    from orchestration.config import load_config
+    from orchestration.execution import ExecutionEngine
+
+    config = load_config()
+    engine = ExecutionEngine(config=config)
+
+    if getattr(args, "all", False):
+        runs = engine.get_all_runs()
+    else:
+        runs = engine.get_active_runs()
+
+    if not runs:
+        label = "runs" if getattr(args, "all", False) else "active agents"
+        print(f"No {label}.")
+        return 0
+
+    fmt = args.format
+    if fmt == "json":
+        from dataclasses import asdict
+        data = [asdict(r) for r in runs]
+        print(json.dumps(data, indent=2))
+        return 0
+
+    # Text table
+    print(f"{'Run ID':<14} {'Task Type':<14} {'Model':<30} {'Tokens':>10}  Status")
+    print(f"{'-' * 12}  {'-' * 12}  {'-' * 28}  {'-' * 10}  {'-' * 8}")
+
+    for run in runs:
+        total = run.token_usage["input"] + run.token_usage["output"]
+        print(
+            f"{run.run_id:<14}"
+            f"{run.task_type:<14}"
+            f"{run.model:<30}"
+            f"{total:>10,}  "
+            f"{run.status}"
+        )
+
+    return 0
+
+
+def setup_status_parser(subparsers: argparse._SubParsersAction) -> None:
+    """Set up the status subcommand parser."""
+    parser = subparsers.add_parser(
+        "status",
+        help="Show running agents and token usage",
+        description="Display active agents, their models, token usage, and status.",
+    )
+    parser.add_argument(
+        "--all",
+        action="store_true",
+        default=False,
+        help="Show all runs, not just active ones",
+    )
+    parser.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format (default: text)",
+    )
+    parser.set_defaults(func=cmd_status)
+
+
+# -----------------------------------------------------------------------------
+# Subcommand: test
+# -----------------------------------------------------------------------------
+
+def cmd_test(args: argparse.Namespace) -> int:
+    """Run tests via pytest."""
+    cmd = ["uv", "run", "pytest"]
+
+    if getattr(args, "integration", False):
+        cmd.extend(["-m", "integration"])
+
+    cmd.append("-v")
+
+    # Pass through any extra args
+    extra = getattr(args, "pytest_args", [])
+    cmd.extend(extra)
+
+    result = subprocess.run(cmd)
+    return result.returncode
+
+
+def setup_test_parser(subparsers: argparse._SubParsersAction) -> None:
+    """Set up the test subcommand parser."""
+    parser = subparsers.add_parser(
+        "test",
+        help="Run tests (shortcut for uv run pytest)",
+        description="Run the test suite. Use --integration for integration tests only.",
+    )
+    parser.add_argument(
+        "--integration",
+        action="store_true",
+        default=False,
+        help="Run integration tests only (pytest -m integration)",
+    )
+    parser.add_argument(
+        "pytest_args",
+        nargs="*",
+        help="Additional arguments passed to pytest",
+    )
+    parser.set_defaults(func=cmd_test)
 
 
 # -----------------------------------------------------------------------------
@@ -986,11 +1294,50 @@ def cmd_cost_log(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_cost_estimate(args: argparse.Namespace) -> int:
+    """Estimate token cost for a task before executing."""
+    from orchestration.config import load_config
+    from orchestration.execution import ExecutionEngine
+
+    task = read_input(args)
+    if not task:
+        print("Error: No task description provided", file=sys.stderr)
+        return 1
+
+    economy = getattr(args, "economy", False)
+    config = load_config()
+    engine = ExecutionEngine(config=config, economy=economy)
+
+    issue = getattr(args, "issue", None)
+    pr = getattr(args, "pr", None)
+    estimate = engine.estimate_cost(task, issue=issue, pr=pr)
+
+    if args.format == "json":
+        print(json.dumps(estimate, indent=2))
+    else:
+        print(f"Cost estimate for: {estimate['task']}")
+        print(f"  Task type:     {estimate['task_type']}")
+        print(f"  Model:         {estimate['model']}")
+        print(f"  Agents:        {' → '.join(estimate['agent_sequence'])}")
+        print(f"  Est. input:    {estimate['estimated_input_tokens']:,} tokens")
+        print(f"  Est. output:   {estimate['estimated_output_tokens']:,} tokens")
+        print(f"  Est. cost:     ${estimate['estimated_cost_usd']:.4f}")
+        print(f"  Token budget:  {estimate['token_budget']:,}")
+
+    return 0
+
+
 def cmd_cost(args: argparse.Namespace) -> int:
     """Handle cost command without subcommand."""
     if not args.cost_command:
-        print("Error: cost requires a subcommand (history or log)", file=sys.stderr)
-        print("Usage: agents cost history | agents cost log --model ...", file=sys.stderr)
+        print(
+            "Error: cost requires a subcommand (estimate, history, or log)",
+            file=sys.stderr,
+        )
+        print(
+            "Usage: eco cost estimate <task> | eco cost history | eco cost log --model ...",
+            file=sys.stderr,
+        )
         return 1
     return args.func(args)
 
@@ -1007,6 +1354,26 @@ def setup_cost_parser(subparsers: argparse._SubParsersAction) -> None:
         dest="cost_command",
         metavar="COMMAND",
     )
+
+    # cost estimate
+    estimate_parser = cost_subparsers.add_parser(
+        "estimate",
+        help="Estimate token cost for a task before execution",
+    )
+    estimate_parser.add_argument(
+        "input",
+        nargs="?",
+        help="Task description (can also be provided via stdin)",
+    )
+    estimate_parser.add_argument("--pr", type=int, help="Estimate for syncing a PR")
+    estimate_parser.add_argument("--issue", type=int, help="Estimate for an issue")
+    estimate_parser.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format (default: text)",
+    )
+    estimate_parser.set_defaults(func=cmd_cost_estimate)
 
     # cost history
     history_parser = cost_subparsers.add_parser(
@@ -1105,6 +1472,10 @@ def create_parser() -> argparse.ArgumentParser:
     setup_review_parser(subparsers)
     setup_rubric_parser(subparsers)
     setup_sync_parser(subparsers)
+    setup_run_parser(subparsers)
+    setup_deploy_parser(subparsers)
+    setup_status_parser(subparsers)
+    setup_test_parser(subparsers)
     setup_cost_parser(subparsers)
 
     return parser
