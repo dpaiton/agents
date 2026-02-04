@@ -6,15 +6,24 @@ This module provides command-line access to all orchestration components.
 Each subcommand is a thin wrapper around the corresponding library module.
 
 Usage:
-    eco route "Add a login page"
-    eco judge --response response.txt --reference reference.txt --rubric code_review
-    eco review --diff <(git diff main)
-    eco rubric list
-    eco rubric show code_review
+    agents route "Add a login page"
+    agents judge --response response.txt --reference reference.txt --rubric code_review
+    agents review --diff <(git diff main)
+    agents rubric list
+    agents rubric show code_review
+
+    eco route "Add a login page"           # economy mode: uses smaller, cheaper models
+    eco judge --response r.txt --ref ref.txt --rubric code_review  # economy mode
+
+Economy mode can also be enabled explicitly with the --economy flag:
+    agents --economy route "Add a login page"
+
+When invoked as ``eco``, economy mode is enabled automatically.
 """
 
 import argparse
 import json
+import os
 import sys
 from typing import Any
 
@@ -59,7 +68,10 @@ def cmd_route(args: argparse.Namespace) -> int:
 
     if not task:
         print("Error: No task description provided", file=sys.stderr)
-        print("Usage: eco route \"task description\" or echo \"task\" | eco route", file=sys.stderr)
+        print(
+            "Usage: agents route \"task description\" or echo \"task\" | agents route",
+            file=sys.stderr,
+        )
         return 1
 
     # Placeholder routing logic - will be replaced by router module
@@ -393,7 +405,7 @@ def cmd_rubric(args: argparse.Namespace) -> int:
     """Handle rubric command without subcommand."""
     if not args.rubric_command:
         print("Error: rubric requires a subcommand (list or show)", file=sys.stderr)
-        print("Usage: eco rubric list | eco rubric show <name>", file=sys.stderr)
+        print("Usage: agents rubric list | agents rubric show <name>", file=sys.stderr)
         return 1
     return args.func(args)
 
@@ -402,18 +414,37 @@ def cmd_rubric(args: argparse.Namespace) -> int:
 # Main entry point
 # -----------------------------------------------------------------------------
 
+def _invoked_as_eco() -> bool:
+    """Check whether the CLI was invoked via the ``eco`` entry point."""
+    argv0 = os.path.basename(sys.argv[0]) if sys.argv else ""
+    return argv0 == "eco"
+
+
 def create_parser() -> argparse.ArgumentParser:
     """Create the main argument parser."""
+    prog = "eco" if _invoked_as_eco() else "agents"
     parser = argparse.ArgumentParser(
-        prog="eco",
-        description="Orchestration framework CLI - command-line access to all orchestration components.",
-        epilog="For more information on a command, use: eco <command> --help",
+        prog=prog,
+        description=(
+            "Orchestration framework CLI - command-line access to all orchestration "
+            "components. Can be invoked as 'agents' (default models) or 'eco' (economy "
+            "mode, uses smaller and cheaper models). Economy mode can also be enabled "
+            "with --economy."
+        ),
+        epilog=f"For more information on a command, use: {prog} <command> --help",
     )
 
     parser.add_argument(
         "--version",
         action="version",
         version="%(prog)s 0.1.0",
+    )
+
+    parser.add_argument(
+        "--economy",
+        action="store_true",
+        default=False,
+        help="Enable economy mode: use smaller, cheaper models (automatic when invoked as 'eco')",
     )
 
     subparsers = parser.add_subparsers(
@@ -432,9 +463,21 @@ def create_parser() -> argparse.ArgumentParser:
 
 
 def main() -> int:
-    """Main entry point for the CLI."""
+    """Main entry point for the CLI.
+
+    Economy mode is activated when either:
+    - The CLI is invoked via the ``eco`` entry point, or
+    - The ``--economy`` flag is passed explicitly.
+
+    When economy mode is active, ``args.economy`` is ``True`` and downstream
+    modules should select smaller, cheaper models accordingly.
+    """
     parser = create_parser()
     args = parser.parse_args()
+
+    # Enable economy mode when invoked as 'eco', even without --economy flag
+    if _invoked_as_eco():
+        args.economy = True
 
     if not args.command:
         parser.print_help()
