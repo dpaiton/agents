@@ -1084,6 +1084,7 @@ def cmd_remote_run(args: argparse.Namespace) -> int:
     timeout = getattr(args, "timeout", 4)
     deploy = getattr(args, "deploy", False)
     dry_run = getattr(args, "dry_run", False)
+    template = getattr(args, "template", "agents-task-template")
 
     result = launch_instance(
         task,
@@ -1096,6 +1097,7 @@ def cmd_remote_run(args: argparse.Namespace) -> int:
         machine_type=machine_type,
         timeout_hours=timeout,
         deploy_mode=deploy,
+        template=template,
         dry_run=dry_run,
     )
 
@@ -1261,6 +1263,11 @@ def setup_remote_parser(subparsers: argparse._SubParsersAction) -> None:
         action="store_true",
         default=False,
         help="Use deploy mode (poll for comments) instead of single run",
+    )
+    run_parser.add_argument(
+        "--template",
+        default="agents-task-template",
+        help="Instance template name or self-link from Terraform output (default: agents-task-template)",
     )
     run_parser.add_argument(
         "--dry-run",
