@@ -16,7 +16,7 @@ from __future__ import annotations
 import re
 import statistics
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Callable, Optional
 
 
@@ -672,6 +672,139 @@ class JudgeEngine:
             scores=combined_scores,
             total=final_total,
             reasoning=f"Ensemble of {n_judges} judges. Agreement: {agreement_ratio:.0%}",
+            bias_checklist=bias_checklist,
+            safety_flag=safety_flag,
+            confidence=confidence,
+        )
+
+    def multi_model_ensemble(
+        self,
+        response: str,
+        rubric: list[EvaluationCriterion],
+        judge_fns: list[JudgeFn],
+        reference: Optional[str] = None,
+    ) -> EvaluationReport:
+        """Run the same rubric across multiple model backends and aggregate results.
+
+        Calls ``self.evaluate()`` once per judge_fn, collecting reports.  Judges
+        that raise exceptions are skipped (P16: graceful degradation).  Results
+        are aggregated via median scores per criterion, majority-vote total, and
+        an agreement-based confidence metric.
+
+        Args:
+            response: The response to evaluate.
+            rubric: List of evaluation criteria.
+            judge_fns: One callable per model backend (``prompt -> str``).
+            reference: Optional reference/ground truth answer.
+
+        Returns:
+            A single aggregated :class:`EvaluationReport`.
+        """
+        total_models = len(judge_fns)
+        reports: list[EvaluationReport] = []
+
+        for judge_fn in judge_fns:
+            try:
+                report = self.evaluate(
+                    response=response,
+                    rubric=rubric,
+                    reference=reference,
+                    judge_fn=judge_fn,
+                )
+                reports.append(report)
+            except Exception:
+                # P16: graceful degradation -- skip failing judges
+                continue
+
+        successful = len(reports)
+
+        if successful == 0:
+            return EvaluationReport(
+                scores=[],
+                total=0.0,
+                reasoning=(
+                    f"Multi-model ensemble of 0/{total_models} models. "
+                    "All judges failed."
+                ),
+                bias_checklist=self._build_standard_bias_checklist(
+                    [*self.STANDARD_BIAS_CHECKS, "cross_model_bias"],
+                    {"cross_model_bias": "No successful evaluations to compare"},
+                ),
+                safety_flag=False,
+                confidence=0.0,
+            )
+
+        # Collect totals for majority vote
+        all_totals = [r.total for r in reports]
+        rounded_totals = [round(t) for t in all_totals]
+        total_counts = Counter(rounded_totals)
+        majority_total, majority_count = total_counts.most_common(1)[0]
+        final_total = float(majority_total)
+
+        # Agreement ratio
+        agreement_ratio = majority_count / successful
+
+        # Variance-based confidence (same formula as ensemble_vote)
+        if len(all_totals) > 1:
+            try:
+                variance = statistics.variance(all_totals)
+                max_possible_variance = (
+                    (rubric[0].scale[1] - rubric[0].scale[0]) ** 2 / 4
+                    if rubric
+                    else 4
+                )
+                variance_factor = 1 - min(variance / max_possible_variance, 1)
+            except statistics.StatisticsError:
+                variance_factor = 1.0
+        else:
+            variance_factor = 1.0
+
+        confidence = agreement_ratio * 0.7 + variance_factor * 0.3
+
+        # Median scores per criterion
+        combined_scores: list[CriterionScore] = []
+        for criterion in rubric:
+            criterion_scores: list[int] = []
+            criterion_reasonings: list[str] = []
+            for report in reports:
+                for s in report.scores:
+                    if s.criterion.name == criterion.name:
+                        criterion_scores.append(s.score)
+                        criterion_reasonings.append(s.reasoning[:100])
+                        break
+
+            if criterion_scores:
+                median_score = int(statistics.median(criterion_scores))
+                combined_scores.append(
+                    CriterionScore(
+                        criterion=criterion,
+                        score=median_score,
+                        reasoning=" | ".join(criterion_reasonings),
+                    )
+                )
+
+        # Safety flag: any model flagging safety is enough
+        safety_flag = any(r.safety_flag for r in reports)
+
+        # Bias checklist with cross-model check
+        notes_map = {
+            "cross_model_bias": (
+                f"Cross-model agreement: {agreement_ratio:.0%} "
+                f"({successful}/{total_models} models succeeded)"
+            ),
+        }
+        bias_checklist = self._build_standard_bias_checklist(
+            [*self.STANDARD_BIAS_CHECKS, "cross_model_bias"],
+            notes_map,
+        )
+
+        return EvaluationReport(
+            scores=combined_scores,
+            total=final_total,
+            reasoning=(
+                f"Multi-model ensemble of {successful}/{total_models} models. "
+                f"Agreement: {agreement_ratio:.0%}"
+            ),
             bias_checklist=bias_checklist,
             safety_flag=safety_flag,
             confidence=confidence,

@@ -552,3 +552,143 @@ class TestConfidenceScoring:
         )
 
         assert result.confidence >= 0.9
+
+
+class TestMultiModelEnsemble:
+    """Tests for multi_model_ensemble() with heterogeneous judge backends."""
+
+    def test_multi_model_ensemble_basic(self):
+        """Three judge_fns all succeed, returns aggregated report."""
+        engine = JudgeEngine()
+        rubric = [
+            EvaluationCriterion(
+                name="quality",
+                description="Overall quality",
+                scale=(1, 5),
+            ),
+        ]
+
+        def judge_a(prompt: str) -> str:
+            return "Reasoning: Good.\nScore: 4"
+
+        def judge_b(prompt: str) -> str:
+            return "Reasoning: Decent.\nScore: 3"
+
+        def judge_c(prompt: str) -> str:
+            return "Reasoning: Great.\nScore: 4"
+
+        report = engine.multi_model_ensemble(
+            response="Test response",
+            rubric=rubric,
+            judge_fns=[judge_a, judge_b, judge_c],
+        )
+
+        assert isinstance(report, EvaluationReport)
+        assert "3/3" in report.reasoning
+        assert report.confidence > 0
+        assert len(report.scores) == 1
+        # Median of [4, 3, 4] = 4
+        assert report.scores[0].score == 4
+
+    def test_multi_model_ensemble_partial_failure(self):
+        """1 of 3 judges fails, still returns a valid report from the other 2."""
+        engine = JudgeEngine()
+        rubric = [
+            EvaluationCriterion(
+                name="quality",
+                description="Overall quality",
+                scale=(1, 5),
+            ),
+        ]
+
+        def judge_ok(prompt: str) -> str:
+            return "Reasoning: Fine.\nScore: 4"
+
+        def judge_fail(prompt: str) -> str:
+            raise RuntimeError("API error")
+
+        report = engine.multi_model_ensemble(
+            response="Test response",
+            rubric=rubric,
+            judge_fns=[judge_ok, judge_fail, judge_ok],
+        )
+
+        assert isinstance(report, EvaluationReport)
+        assert "2/3" in report.reasoning
+        assert report.confidence > 0
+
+    def test_multi_model_ensemble_all_fail(self):
+        """All judges fail, returns 0 confidence with empty scores."""
+        engine = JudgeEngine()
+        rubric = [
+            EvaluationCriterion(
+                name="quality",
+                description="Overall quality",
+                scale=(1, 5),
+            ),
+        ]
+
+        def judge_fail(prompt: str) -> str:
+            raise RuntimeError("API error")
+
+        report = engine.multi_model_ensemble(
+            response="Test response",
+            rubric=rubric,
+            judge_fns=[judge_fail, judge_fail, judge_fail],
+        )
+
+        assert report.confidence == 0.0
+        assert report.total == 0.0
+        assert report.scores == []
+        assert "0/3" in report.reasoning
+
+    def test_multi_model_ensemble_agreement(self):
+        """Identical judges should yield 100% agreement and high confidence."""
+        engine = JudgeEngine()
+        rubric = [
+            EvaluationCriterion(
+                name="quality",
+                description="Overall quality",
+                scale=(1, 5),
+            ),
+        ]
+
+        def judge_same(prompt: str) -> str:
+            return "Reasoning: Excellent.\nScore: 5"
+
+        report = engine.multi_model_ensemble(
+            response="Test response",
+            rubric=rubric,
+            judge_fns=[judge_same, judge_same, judge_same],
+        )
+
+        assert "Agreement: 100%" in report.reasoning
+        assert report.confidence >= 0.9
+        assert report.total == 5.0
+
+    def test_multi_model_ensemble_has_cross_model_bias_check(self):
+        """Bias checklist should include cross_model_bias."""
+        engine = JudgeEngine()
+        rubric = [
+            EvaluationCriterion(
+                name="quality",
+                description="Overall quality",
+                scale=(1, 5),
+            ),
+        ]
+
+        def judge(prompt: str) -> str:
+            return "Reasoning: OK.\nScore: 3"
+
+        report = engine.multi_model_ensemble(
+            response="Test response",
+            rubric=rubric,
+            judge_fns=[judge],
+        )
+
+        cross_model_check = [
+            item for item in report.bias_checklist
+            if item.name == "cross_model_bias"
+        ]
+        assert len(cross_model_check) == 1
+        assert cross_model_check[0].checked is True
