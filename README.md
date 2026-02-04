@@ -4,7 +4,7 @@ Multi-agent orchestration system that uses GitHub issues and PR comments as the 
 
 ## Overview
 
-This project coordinates AI agents -- orchestrator, engineer, test-writer, reviewer, issue-creator, and judge -- to develop software through comment-driven development. You write a comment on a GitHub issue or PR, run `eco sync`, and agents classify intent, execute tasks in parallel (editing issues, pushing code, updating PRs), resolve comment threads, and post a summary. The system wraps deterministic scaffolding around probabilistic models, preferring code and CLI tools over prompts and agents whenever possible.
+This project coordinates AI agents -- orchestrator, engineer, test-writer, reviewer, issue-creator, and judge -- to develop software through comment-driven development. You write a comment on a GitHub issue or PR, run `sync` (or `eco sync` for economy mode with smaller, cheaper models), and agents classify intent, execute tasks in parallel (editing issues, pushing code, updating PRs), resolve comment threads, and post a summary. The system wraps deterministic scaffolding around probabilistic models, preferring code and CLI tools over prompts and agents whenever possible.
 
 ## Quick Start
 
@@ -12,8 +12,8 @@ This project coordinates AI agents -- orchestrator, engineer, test-writer, revie
 git clone https://github.com/dpaiton/agents.git && cd agents
 uv sync
 cp .env.example .env  # Fill in API keys
-eco --help
-eco sync --dry-run
+sync --help
+sync --dry-run
 ```
 
 ## Prerequisites
@@ -61,47 +61,49 @@ eco sync --dry-run
 
 ## Running Agents
 
-### `eco sync` -- Primary workflow
+> **Economy mode:** Prepend `eco` to any command (e.g., `eco sync`, `eco run`) to use smaller, cheaper models for cost-efficient execution. The standard commands use the default (larger) models configured in your environment variables.
+
+### `sync` -- Primary workflow
 
 Fetches unresolved comments on issues and PRs, classifies intent, executes actions in parallel, resolves threads, and posts a summary.
 
 ```bash
-eco sync                     # Process all unresolved comments
-eco sync --issue 42          # Process comments on a specific issue
-eco sync --pr 18             # Process comments on a specific PR
-eco sync --dry-run           # Show the execution plan without acting
+sync                         # Process all unresolved comments
+sync --issue 42              # Process comments on a specific issue
+sync --pr 18                 # Process comments on a specific PR
+sync --dry-run               # Show the execution plan without acting
 ```
 
-### `eco run` -- Direct task execution
+### `run` -- Direct task execution
 
 Runs a task through the orchestration pipeline without requiring a GitHub comment.
 
 ```bash
-eco run "Add input validation"
-eco run --issue 42
+run "Add input validation"
+run --issue 42
 ```
 
-### `eco deploy` -- Long-running watch mode
+### `deploy` -- Long-running watch mode
 
 Deploys an agent that continuously watches an issue or PR for new comments.
 
 ```bash
-eco deploy --issue 42 --watch
+deploy --issue 42 --watch
 ```
 
-### `eco remote run` -- GCP deployment
+### `remote run` -- GCP deployment
 
 Runs an agent remotely on Google Cloud with automatic shutdown.
 
 ```bash
-eco remote run --issue 42
+remote run --issue 42
 ```
 
-### `eco cost` / `eco status` -- Monitoring
+### `cost` / `status` -- Monitoring
 
 ```bash
-eco cost --pr 18             # Estimate token cost for a PR
-eco status                   # Show running agents and token usage
+cost --pr 18                 # Estimate token cost for a PR
+status                       # Show running agents and token usage
 ```
 
 ### Testing and linting
@@ -109,7 +111,7 @@ eco status                   # Show running agents and token usage
 ```bash
 uv run pytest                           # Unit tests
 uv run pytest -m integration            # Integration tests
-eco test --integration                  # Same, via eco
+test --integration                      # Same, via CLI
 uv run ruff check .                     # Linter
 ```
 
@@ -230,7 +232,7 @@ Agent models are configured via environment variables (`ORCHESTRATOR_AGENT_MODEL
 User comments on issue/PR
     |
     v
-eco sync (fetches unresolved comments via gh CLI)
+sync (fetches unresolved comments via gh CLI)
     |
     v
 Classify intent per comment (pattern match first, LLM fallback)
@@ -249,8 +251,8 @@ Resolve comment threads (GraphQL resolveReviewThread)
 Post summary
 
 Execution modes:
-    Local:  eco sync / eco run / eco deploy
-    Remote: eco remote run (GCP, auto-shutdown)
+    Local:  sync / run / deploy
+    Remote: remote run (GCP, auto-shutdown)
     CI:     GitHub Actions (@claude mentions)
 ```
 
