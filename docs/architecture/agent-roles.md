@@ -95,3 +95,15 @@ Agents communicate through GitHub artifacts, not direct messages:
 | Judge | Orchestrator | Evaluation report (scores + reasoning) |
 
 This ensures all communication is version-controlled, auditable, and visible to humans (P9: ENG / SRE Principles).
+
+### Human-in-the-Loop Verification
+
+Human approval is required at critical checkpoints throughout the workflow. Branch protection rules enforce these requirements:
+
+1. **Task review.** Before agents are deployed, the orchestrator's decomposed tasks (issues) must be reviewed and approved by a human. This ensures the problem breakdown is correct and the scope is appropriate before any agent work begins.
+
+2. **Test PR review.** The Test Writer submits tests in their own PR. Tests are initially skipped so CI passes. After the Judge evaluates the test PR, a human must review and approve it before it is merged. This ensures test quality and coverage are validated by a person, not just an agent.
+
+3. **Implementation PR review.** The Engineer submits the implementation in a separate PR. After the Judge evaluates the implementation PR, a human must review and approve it before it is merged. This ensures code quality, correctness, and security are validated by a person before the code enters the main branch.
+
+These human checkpoints are enforced by branch protection rules, which require at least one human approval on every PR before merging. No agent can bypass this requirement. The sequence is: agent work, then Judge evaluation, then human review, then merge.

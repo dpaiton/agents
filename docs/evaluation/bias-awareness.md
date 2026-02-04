@@ -170,6 +170,16 @@ Before deploying any judge prompt to production, verify:
 - [ ] Positional agreement rate is measured and above 85%
 - [ ] Length-score correlation is measured and below 0.5
 
+### Checklist Execution Policy
+
+This checklist incurs token expenditure each time it runs, which increases cost. To balance quality assurance against cost, the checklist runs with a **tunable probability** that is configurable per deployment:
+
+- **Probability parameter:** Set the probability (0% to 100%) that the checklist runs on any given evaluation. This can be set to 0% to disable automated checks entirely, or 100% for full coverage during calibration periods.
+- **Manual trigger:** The checklist can always be run manually via CLI tooling (e.g., `calibrate --bias-check`), regardless of the probability setting.
+- **Default assumption when skipped:** When the probability check skips the checklist, the system assumes judges are operating correctly. No bias flags are raised and evaluation proceeds normally.
+
+This is a cost-conscious design: the checklist exists as a safety net, not a gate on every evaluation. During active development or after prompt changes, increase the probability. During stable operation with well-calibrated judges, reduce it to minimize unnecessary token expenditure.
+
 ## References
 
 - [Code Review Rubric](rubrics.md) — The scoring criteria the judge applies

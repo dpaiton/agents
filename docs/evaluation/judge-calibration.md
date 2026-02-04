@@ -230,7 +230,7 @@ Run the judge against all gold-standard examples. Record the judge's reasoning a
 
 ```bash
 # Example calibration run
-eco calibrate --judge-prompt prompts/judge_v2.txt --gold-standards data/gold/*.json
+calibrate --judge-prompt prompts/judge_v2.txt --gold-standards data/gold/*.json
 ```
 
 ### Step 3: Compare to Gold

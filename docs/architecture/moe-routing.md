@@ -53,7 +53,7 @@ The first routing layer uses pattern matching — no LLM, no probabilistic behav
 **Input signals:**
 - GitHub issue labels (`bug`, `feature`, `docs`, `refactor`, `security`, `infra`)
 - GitHub event type (PR opened, issue commented, review submitted)
-- CLI command (`eco run`, `eco sync`, `eco deploy`)
+- CLI command (`run`, `sync`, `deploy`; prepend `eco` for economy mode, e.g. `eco run`, `eco sync`, `eco deploy`)
 - Keyword patterns in the first line of the task description
 
 **Routing rules (evaluated in order):**
@@ -65,10 +65,10 @@ The first routing layer uses pattern matching — no LLM, no probabilistic behav
 | 3 | Issue label: `security` | Orchestrator > Test Writer > Engineer > Reviewer > Judge |
 | 4 | Issue label: `bug` | Orchestrator > Test Writer > Engineer > Reviewer |
 | 5 | Issue label: `feature` or `enhancement` | Orchestrator > Test Writer > Engineer > Reviewer |
-| 6 | Issue label: `refactor` | Orchestrator > Test Writer > Engineer > Reviewer |
-| 7 | Issue label: `docs` or `documentation` | Orchestrator > Engineer > Reviewer |
-| 8 | Issue label: `infra` or `ci` | Orchestrator > Engineer > Reviewer |
-| 9 | CLI: `eco sync` | Process comments (no agent routing) |
+| 6 | Issue label: `infra` or `ci` | Orchestrator > Engineer > Reviewer |
+| 7 | Issue label: `refactor` | Orchestrator > Test Writer > Engineer > Reviewer |
+| 8 | Issue label: `docs` or `documentation` | Orchestrator > Engineer > Reviewer |
+| 9 | CLI: `sync` (or `eco sync`) | Process comments (no agent routing) |
 
 Rules are evaluated top-to-bottom. First match wins. This is deterministic and auditable (P5).
 
@@ -120,7 +120,7 @@ This follows P16 (Permission to Fail): the system asks rather than guessing.
 | Issue #55 labeled `feature`: "Add CSV export" | `feature` label | Not needed | Orchestrator > Test Writer > Engineer > Reviewer |
 | Issue #60 (no labels): "Clean up the database module" | No match | `refactor` (92%) | Orchestrator > Test Writer > Engineer > Reviewer |
 | Issue #61 (no labels): "Improve things" | No match | `unclear` (35%) | Orchestrator asks user to clarify |
-| `eco run "Add input validation"` | No label match | `feature` (88%) | Orchestrator > Test Writer > Engineer > Reviewer |
+| `run "Add input validation"` | No label match | `feature` (88%) | Orchestrator > Test Writer > Engineer > Reviewer |
 | PR review submitted on #18 | Review submitted event | Not needed | Judge |
 | Issue #70 labeled `docs`: "Write API reference" | `docs` label | Not needed | Orchestrator > Engineer > Reviewer |
 

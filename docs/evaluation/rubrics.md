@@ -99,7 +99,7 @@ Sum the five scores. The total is out of 10.
 
 | Total | Interpretation |
 |---|---|
-| 9-10 | Ready to merge. Minor nits at most. |
+| 9-10 | Ready for human review. Minor nits at most. |
 | 7-8 | Good work. Address specific feedback before merging. |
 | 5-6 | Needs revision. Core issues to fix. |
 | 3-4 | Significant rework required. |
