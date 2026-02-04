@@ -1,0 +1,25 @@
+# deployment/gcp/terraform.tfvars.example — Copy to terraform.tfvars and fill in.
+#
+# Usage:
+#   cp terraform.tfvars.example terraform.tfvars
+#   $EDITOR terraform.tfvars
+#   terraform init && terraform apply
+
+project_id   = "my-gcp-project"
+region       = "us-central1"
+zone         = "us-central1-a"
+machine_type = "e2-standard-2"
+disk_size_gb = 30
+preemptible  = true
+
+# Optional: set to enable log archival to GCS
+# log_bucket_name = "my-project-agents-logs"
+
+# Secret names (defaults are fine unless you renamed them)
+# secret_names = {
+#   anthropic_api_key = "anthropic-api-key"
+#   github_token      = "github-token"
+#   google_api_key    = "google-api-key"
+#   openai_api_key    = "openai-api-key"
+#   arcade_api_key    = "arcade-api-key"
+# }

@@ -1057,6 +1057,276 @@ def setup_cost_parser(subparsers: argparse._SubParsersAction) -> None:
 
 
 # -----------------------------------------------------------------------------
+# Subcommand: remote
+# -----------------------------------------------------------------------------
+
+def cmd_remote_run(args: argparse.Namespace) -> int:
+    """Launch a GCP instance for an agent task."""
+    from orchestration.remote import get_current_branch, get_repo_url, launch_instance
+
+    task = read_input(args)
+    if not task and not args.issue and not args.pr:
+        print("Error: Provide a task description, --issue, or --pr", file=sys.stderr)
+        return 1
+
+    if not task:
+        task = f"Process issue #{args.issue}" if args.issue else f"Process PR #{args.pr}"
+
+    repo = get_repo_url()
+    if not repo:
+        print("Error: Could not detect git remote URL", file=sys.stderr)
+        return 1
+
+    branch = getattr(args, "branch", None) or get_current_branch()
+    project = getattr(args, "project", None)
+    zone = getattr(args, "zone", "us-central1-a")
+    machine_type = getattr(args, "machine_type", "e2-standard-2")
+    timeout = getattr(args, "timeout", 4)
+    deploy = getattr(args, "deploy", False)
+    dry_run = getattr(args, "dry_run", False)
+    template = getattr(args, "template", "agents-task-template")
+
+    result = launch_instance(
+        task,
+        repo=repo,
+        branch=branch,
+        issue=args.issue,
+        pr=args.pr,
+        project=project,
+        zone=zone,
+        machine_type=machine_type,
+        timeout_hours=timeout,
+        deploy_mode=deploy,
+        template=template,
+        dry_run=dry_run,
+    )
+
+    if result.get("status") == "FAILED":
+        print(f"Error: {result.get('error', 'Unknown error')}", file=sys.stderr)
+        return 1
+
+    if dry_run:
+        print("Dry run — would execute:")
+        print(f"  {result.get('command', '')}")
+    else:
+        print(f"Instance launched: {result['name']}")
+        print(f"  Zone: {result['zone']}")
+        print(f"  Machine: {result['machine_type']}")
+        print(f"  Task: {result['task']}")
+
+    print("\nMonitor with: eco remote status")
+    print(f"Stream logs:  eco remote logs {result['name']}")
+    print(f"Stop:         eco remote stop {result['name']}")
+
+    return 0
+
+
+def cmd_remote_status(args: argparse.Namespace) -> int:
+    """List running remote agent instances."""
+    from orchestration.remote import list_instances
+
+    project = getattr(args, "project", None)
+    instances = list_instances(project=project)
+
+    if not instances:
+        print("No remote agent instances found.")
+        return 0
+
+    if args.format == "json":
+        from dataclasses import asdict as _asdict
+        data = [_asdict(i) for i in instances]
+        print(json.dumps(data, indent=2))
+        return 0
+
+    print(f"{'Instance':<30} {'Zone':<18} {'Status':<12} {'Machine':<16} {'Task'}")
+    print(f"{'-'*28}  {'-'*16}  {'-'*10}  {'-'*14}  {'-'*20}")
+    for inst in instances:
+        task_label = inst.task[:40] if inst.task else ""
+        if inst.issue:
+            task_label = f"issue #{inst.issue}"
+        elif inst.pr:
+            task_label = f"PR #{inst.pr}"
+        print(
+            f"{inst.name:<30} {inst.zone:<18} {inst.status:<12} "
+            f"{inst.machine_type:<16} {task_label}"
+        )
+
+    return 0
+
+
+def cmd_remote_logs(args: argparse.Namespace) -> int:
+    """Stream logs from a remote agent instance."""
+    from orchestration.remote import stream_logs
+
+    instance = args.instance
+    zone = getattr(args, "zone", "us-central1-a")
+    project = getattr(args, "project", None)
+    follow = not getattr(args, "no_follow", False)
+
+    print(f"Streaming logs from {instance}...")
+    print("(Press Ctrl+C to stop)\n")
+
+    try:
+        proc = stream_logs(
+            instance,
+            zone=zone,
+            project=project,
+            follow=follow,
+        )
+        if proc.stdout:
+            for line in proc.stdout:
+                print(line, end="")
+        proc.wait()
+    except KeyboardInterrupt:
+        print("\nStopped log streaming.")
+
+    return 0
+
+
+def cmd_remote_stop(args: argparse.Namespace) -> int:
+    """Stop a remote agent instance."""
+    from orchestration.remote import stop_instance
+
+    instance = args.instance
+    zone = getattr(args, "zone", "us-central1-a")
+    project = getattr(args, "project", None)
+
+    print(f"Stopping instance {instance}...")
+    result = stop_instance(instance, zone=zone, project=project)
+
+    if result.get("status") == "FAILED":
+        print(f"Error: {result.get('error', 'Unknown error')}", file=sys.stderr)
+        return 1
+
+    print(f"Instance {instance} deleted.")
+    return 0
+
+
+def cmd_remote(args: argparse.Namespace) -> int:
+    """Handle remote command, dispatching to subcommands."""
+    remote_command = getattr(args, "remote_command", None)
+    if not remote_command:
+        print("Error: remote requires a subcommand (run, status, logs, stop)", file=sys.stderr)
+        print("Usage: eco remote run <task> | eco remote status | eco remote logs <instance> | eco remote stop <instance>", file=sys.stderr)
+        return 1
+    return args.func(args)
+
+
+def setup_remote_parser(subparsers: argparse._SubParsersAction) -> None:
+    """Set up the remote subcommand parser."""
+    parser = subparsers.add_parser(
+        "remote",
+        help="Manage remote GCP agent instances",
+        description=(
+            "Launch, monitor, and manage agent tasks running on GCP Compute instances. "
+            "Requires gcloud CLI configured with appropriate project and credentials."
+        ),
+    )
+
+    remote_subparsers = parser.add_subparsers(
+        dest="remote_command",
+        metavar="SUBCOMMAND",
+    )
+
+    # remote run
+    run_parser = remote_subparsers.add_parser(
+        "run",
+        help="Launch a GCP instance for an agent task",
+    )
+    run_parser.add_argument(
+        "input",
+        nargs="?",
+        help="Task description (can also be provided via stdin)",
+    )
+    run_parser.add_argument("--issue", type=int, help="GitHub issue number")
+    run_parser.add_argument("--pr", type=int, help="GitHub PR number")
+    run_parser.add_argument("--branch", help="Git branch to checkout (default: current)")
+    run_parser.add_argument(
+        "--machine-type",
+        default="e2-standard-2",
+        help="GCP machine type (default: e2-standard-2)",
+    )
+    run_parser.add_argument(
+        "--zone",
+        default="us-central1-a",
+        help="GCP zone (default: us-central1-a)",
+    )
+    run_parser.add_argument("--project", help="GCP project ID")
+    run_parser.add_argument(
+        "--timeout",
+        type=int,
+        default=4,
+        help="Max runtime in hours (default: 4)",
+    )
+    run_parser.add_argument(
+        "--deploy",
+        action="store_true",
+        default=False,
+        help="Use deploy mode (poll for comments) instead of single run",
+    )
+    run_parser.add_argument(
+        "--template",
+        default="agents-task-template",
+        help="Instance template name or self-link from Terraform output (default: agents-task-template)",
+    )
+    run_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=False,
+        help="Show what would be launched without actually creating the instance",
+    )
+    run_parser.set_defaults(func=cmd_remote_run)
+
+    # remote status
+    status_parser = remote_subparsers.add_parser(
+        "status",
+        help="List running remote agent instances",
+    )
+    status_parser.add_argument("--project", help="GCP project ID")
+    status_parser.add_argument(
+        "--format",
+        choices=["text", "json"],
+        default="text",
+        help="Output format (default: text)",
+    )
+    status_parser.set_defaults(func=cmd_remote_status)
+
+    # remote logs
+    logs_parser = remote_subparsers.add_parser(
+        "logs",
+        help="Stream logs from a remote agent instance",
+    )
+    logs_parser.add_argument("instance", help="Instance name")
+    logs_parser.add_argument(
+        "--zone",
+        default="us-central1-a",
+        help="GCP zone (default: us-central1-a)",
+    )
+    logs_parser.add_argument("--project", help="GCP project ID")
+    logs_parser.add_argument(
+        "--no-follow",
+        action="store_true",
+        default=False,
+        help="Print logs and exit instead of streaming",
+    )
+    logs_parser.set_defaults(func=cmd_remote_logs)
+
+    # remote stop
+    stop_parser = remote_subparsers.add_parser(
+        "stop",
+        help="Stop a remote agent instance",
+    )
+    stop_parser.add_argument("instance", help="Instance name")
+    stop_parser.add_argument(
+        "--zone",
+        default="us-central1-a",
+        help="GCP zone (default: us-central1-a)",
+    )
+    stop_parser.add_argument("--project", help="GCP project ID")
+    stop_parser.set_defaults(func=cmd_remote_stop)
+
+
+# -----------------------------------------------------------------------------
 # Main entry point
 # -----------------------------------------------------------------------------
 
@@ -1106,6 +1376,7 @@ def create_parser() -> argparse.ArgumentParser:
     setup_rubric_parser(subparsers)
     setup_sync_parser(subparsers)
     setup_cost_parser(subparsers)
+    setup_remote_parser(subparsers)
 
     return parser
 
@@ -1140,6 +1411,9 @@ def main() -> int:
 
     if args.command == "sync":
         return cmd_sync(args)
+
+    if args.command == "remote":
+        return cmd_remote(args)
 
     # Execute the subcommand
     if hasattr(args, "func"):
