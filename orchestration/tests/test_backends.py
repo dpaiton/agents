@@ -1,0 +1,458 @@
+"""Tests for the model backend abstraction.
+
+Tests are written first (P7: Spec / Test / Evals First) and cover:
+- Protocol compliance
+- Backend registry
+- Factory function
+- Available backends detection
+- Backend-to-judge-fn adapter
+- Economy model selection
+- Individual backend SDK call shapes (mocked)
+"""
+
+from __future__ import annotations
+
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+from orchestration.backends import (
+    BACKEND_REGISTRY,
+    DEFAULT_MODELS,
+    ECONOMY_MODELS,
+    AnthropicBackend,
+    GoogleBackend,
+    ModelBackend,
+    OpenAIBackend,
+    available_backends,
+    backend_as_judge_fn,
+    create_backend,
+)
+
+
+# ---------------------------------------------------------------------------
+# TestModelBackendProtocol
+# ---------------------------------------------------------------------------
+
+
+class TestModelBackendProtocol:
+    """Verify that the ModelBackend protocol works with arbitrary implementations."""
+
+    def test_mock_satisfies_protocol(self):
+        """An object with a complete(str)->str method satisfies ModelBackend."""
+
+        class _MockBackend:
+            def complete(self, prompt: str) -> str:
+                return "response"
+
+        backend = _MockBackend()
+        assert isinstance(backend, ModelBackend)
+
+    def test_object_without_complete_does_not_satisfy(self):
+        """An object without complete() does not satisfy ModelBackend."""
+
+        class _NotABackend:
+            pass
+
+        assert not isinstance(_NotABackend(), ModelBackend)
+
+    def test_concrete_backends_satisfy_protocol(self):
+        """All registered backend classes satisfy the protocol (structurally)."""
+        for cls in BACKEND_REGISTRY.values():
+            assert hasattr(cls, "complete")
+
+
+# ---------------------------------------------------------------------------
+# TestBackendRegistry
+# ---------------------------------------------------------------------------
+
+
+class TestBackendRegistry:
+    """Tests for BACKEND_REGISTRY."""
+
+    def test_registry_has_three_providers(self):
+        assert len(BACKEND_REGISTRY) == 3
+
+    def test_registry_contains_anthropic(self):
+        assert "anthropic" in BACKEND_REGISTRY
+        assert BACKEND_REGISTRY["anthropic"] is AnthropicBackend
+
+    def test_registry_contains_google(self):
+        assert "google" in BACKEND_REGISTRY
+        assert BACKEND_REGISTRY["google"] is GoogleBackend
+
+    def test_registry_contains_openai(self):
+        assert "openai" in BACKEND_REGISTRY
+        assert BACKEND_REGISTRY["openai"] is OpenAIBackend
+
+    def test_registry_values_are_classes(self):
+        for cls in BACKEND_REGISTRY.values():
+            assert isinstance(cls, type)
+
+
+# ---------------------------------------------------------------------------
+# TestCreateBackend
+# ---------------------------------------------------------------------------
+
+
+class _MockAnthropicModule:
+    """Minimal mock for the anthropic SDK module."""
+
+    def __init__(self):
+        self.Anthropic = MagicMock()
+
+
+class _MockGenaiModule:
+    """Minimal mock for the google.genai SDK module."""
+
+    def __init__(self):
+        self.Client = MagicMock()
+
+
+class _MockGoogleModule:
+    """Mock for 'google' top-level with genai attribute."""
+
+    def __init__(self, genai_mod):
+        self.genai = genai_mod
+
+
+class _MockOpenAIModule:
+    """Minimal mock for the openai SDK module."""
+
+    def __init__(self):
+        self.OpenAI = MagicMock()
+
+
+class TestCreateBackend:
+    """Tests for the create_backend factory function."""
+
+    def test_create_anthropic_backend(self):
+        mock_mod = _MockAnthropicModule()
+        with (
+            patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test-key"}),
+            patch.dict("sys.modules", {"anthropic": mock_mod}),
+        ):
+            backend = create_backend("anthropic")
+            assert isinstance(backend, AnthropicBackend)
+
+    def test_create_google_backend(self):
+        mock_genai = _MockGenaiModule()
+        mock_google = _MockGoogleModule(mock_genai)
+        with (
+            patch.dict("os.environ", {"GOOGLE_API_KEY": "test-key"}),
+            patch.dict(
+                "sys.modules",
+                {"google": mock_google, "google.genai": mock_genai},
+            ),
+        ):
+            backend = create_backend("google")
+            assert isinstance(backend, GoogleBackend)
+
+    def test_create_openai_backend(self):
+        mock_mod = _MockOpenAIModule()
+        with (
+            patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}),
+            patch.dict("sys.modules", {"openai": mock_mod}),
+        ):
+            backend = create_backend("openai")
+            assert isinstance(backend, OpenAIBackend)
+
+    def test_create_unknown_provider_raises(self):
+        with pytest.raises(ValueError, match="Unknown provider"):
+            create_backend("unknown")
+
+
+# ---------------------------------------------------------------------------
+# TestAvailableBackends
+# ---------------------------------------------------------------------------
+
+
+class TestAvailableBackends:
+    """Tests for the available_backends function."""
+
+    @patch.dict(
+        "os.environ",
+        {"ANTHROPIC_API_KEY": "k1", "GOOGLE_API_KEY": "k2", "OPENAI_API_KEY": "k3"},
+    )
+    def test_all_available_when_all_keys_set(self):
+        result = available_backends()
+        assert "anthropic" in result
+        assert "google" in result
+        assert "openai" in result
+
+    @patch.dict("os.environ", {"ANTHROPIC_API_KEY": "k1"}, clear=True)
+    def test_only_anthropic_when_only_its_key_set(self):
+        result = available_backends()
+        assert result == ["anthropic"]
+
+    @patch.dict("os.environ", {}, clear=True)
+    def test_empty_when_no_keys_set(self):
+        result = available_backends()
+        assert result == []
+
+    @patch.dict(
+        "os.environ",
+        {"GOOGLE_API_KEY": "k2", "OPENAI_API_KEY": "k3"},
+        clear=True,
+    )
+    def test_excludes_provider_without_key(self):
+        result = available_backends()
+        assert "anthropic" not in result
+        assert "google" in result
+        assert "openai" in result
+
+
+# ---------------------------------------------------------------------------
+# TestBackendAsJudgeFn
+# ---------------------------------------------------------------------------
+
+
+class TestBackendAsJudgeFn:
+    """Tests for backend_as_judge_fn adapter."""
+
+    def test_adapts_backend_to_callable(self):
+        mock_backend = MagicMock(spec=ModelBackend)
+        mock_backend.complete.return_value = "judge response"
+
+        judge_fn = backend_as_judge_fn(mock_backend)
+        result = judge_fn("prompt text")
+
+        assert result == "judge response"
+        mock_backend.complete.assert_called_once_with("prompt text")
+
+    def test_returned_callable_is_callable(self):
+        mock_backend = MagicMock(spec=ModelBackend)
+        judge_fn = backend_as_judge_fn(mock_backend)
+        assert callable(judge_fn)
+
+    def test_passes_through_prompt_exactly(self):
+        mock_backend = MagicMock(spec=ModelBackend)
+        mock_backend.complete.return_value = ""
+
+        judge_fn = backend_as_judge_fn(mock_backend)
+        judge_fn("exact prompt")
+
+        mock_backend.complete.assert_called_with("exact prompt")
+
+
+# ---------------------------------------------------------------------------
+# TestEconomyModels
+# ---------------------------------------------------------------------------
+
+
+class TestEconomyModels:
+    """Tests for economy model selection."""
+
+    def test_economy_models_dict_has_all_providers(self):
+        for provider in BACKEND_REGISTRY:
+            assert provider in ECONOMY_MODELS
+
+    def test_economy_models_differ_from_defaults(self):
+        """Economy models should be cheaper alternatives (at least for anthropic/openai)."""
+        assert ECONOMY_MODELS["anthropic"] != DEFAULT_MODELS["anthropic"]
+        assert ECONOMY_MODELS["openai"] != DEFAULT_MODELS["openai"]
+
+    def test_economy_flag_selects_economy_model(self):
+        mock_mod = _MockAnthropicModule()
+        with (
+            patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test-key"}),
+            patch.dict("sys.modules", {"anthropic": mock_mod}),
+        ):
+            backend = create_backend("anthropic", economy=True)
+            assert backend.model == ECONOMY_MODELS["anthropic"]
+
+    def test_explicit_model_overrides_economy(self):
+        mock_mod = _MockAnthropicModule()
+        with (
+            patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test-key"}),
+            patch.dict("sys.modules", {"anthropic": mock_mod}),
+        ):
+            backend = create_backend("anthropic", model="custom-model", economy=True)
+            assert backend.model == "custom-model"
+
+    def test_no_economy_uses_default_model(self):
+        mock_mod = _MockAnthropicModule()
+        with (
+            patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test-key"}),
+            patch.dict("sys.modules", {"anthropic": mock_mod}),
+        ):
+            backend = create_backend("anthropic")
+            assert backend.model == DEFAULT_MODELS["anthropic"]
+
+
+# ---------------------------------------------------------------------------
+# TestAnthropicBackend
+# ---------------------------------------------------------------------------
+
+
+class TestAnthropicBackend:
+    """Tests for AnthropicBackend with mocked SDK."""
+
+    def test_complete_calls_messages_create(self):
+        mock_mod = _MockAnthropicModule()
+        mock_client = MagicMock()
+        mock_mod.Anthropic.return_value = mock_client
+
+        mock_message = MagicMock()
+        mock_message.content = [MagicMock(text="response text")]
+        mock_client.messages.create.return_value = mock_message
+
+        with (
+            patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test-key"}),
+            patch.dict("sys.modules", {"anthropic": mock_mod}),
+        ):
+            backend = AnthropicBackend()
+            result = backend.complete("test prompt")
+
+        mock_client.messages.create.assert_called_once_with(
+            model=DEFAULT_MODELS["anthropic"],
+            max_tokens=1024,
+            messages=[{"role": "user", "content": "test prompt"}],
+        )
+        assert result == "response text"
+
+    def test_uses_custom_model(self):
+        mock_mod = _MockAnthropicModule()
+        mock_client = MagicMock()
+        mock_mod.Anthropic.return_value = mock_client
+        mock_message = MagicMock()
+        mock_message.content = [MagicMock(text="ok")]
+        mock_client.messages.create.return_value = mock_message
+
+        with (
+            patch.dict("os.environ", {"ANTHROPIC_API_KEY": "test-key"}),
+            patch.dict("sys.modules", {"anthropic": mock_mod}),
+        ):
+            backend = AnthropicBackend(model="claude-custom")
+            backend.complete("p")
+
+        call_kwargs = mock_client.messages.create.call_args
+        assert call_kwargs.kwargs["model"] == "claude-custom"
+
+    @patch.dict("os.environ", {}, clear=True)
+    def test_raises_without_api_key(self):
+        with pytest.raises(ValueError, match="ANTHROPIC_API_KEY"):
+            AnthropicBackend()
+
+
+# ---------------------------------------------------------------------------
+# TestGoogleBackend
+# ---------------------------------------------------------------------------
+
+
+class TestGoogleBackend:
+    """Tests for GoogleBackend with mocked SDK."""
+
+    def _make_mocks(self):
+        mock_genai = _MockGenaiModule()
+        mock_google = _MockGoogleModule(mock_genai)
+        return mock_google, mock_genai
+
+    def test_complete_calls_generate_content(self):
+        mock_google, mock_genai = self._make_mocks()
+        mock_client = MagicMock()
+        mock_genai.Client.return_value = mock_client
+
+        mock_response = MagicMock()
+        mock_response.text = "generated text"
+        mock_client.models.generate_content.return_value = mock_response
+
+        with (
+            patch.dict("os.environ", {"GOOGLE_API_KEY": "test-key"}),
+            patch.dict(
+                "sys.modules",
+                {"google": mock_google, "google.genai": mock_genai},
+            ),
+        ):
+            backend = GoogleBackend()
+            result = backend.complete("test prompt")
+
+        mock_client.models.generate_content.assert_called_once_with(
+            model=DEFAULT_MODELS["google"],
+            contents="test prompt",
+        )
+        assert result == "generated text"
+
+    def test_uses_custom_model(self):
+        mock_google, mock_genai = self._make_mocks()
+        mock_client = MagicMock()
+        mock_genai.Client.return_value = mock_client
+        mock_response = MagicMock()
+        mock_response.text = "ok"
+        mock_client.models.generate_content.return_value = mock_response
+
+        with (
+            patch.dict("os.environ", {"GOOGLE_API_KEY": "test-key"}),
+            patch.dict(
+                "sys.modules",
+                {"google": mock_google, "google.genai": mock_genai},
+            ),
+        ):
+            backend = GoogleBackend(model="gemini-custom")
+            backend.complete("p")
+
+        call_kwargs = mock_client.models.generate_content.call_args
+        assert call_kwargs.kwargs["model"] == "gemini-custom"
+
+    @patch.dict("os.environ", {}, clear=True)
+    def test_raises_without_api_key(self):
+        with pytest.raises(ValueError, match="GOOGLE_API_KEY"):
+            GoogleBackend()
+
+
+# ---------------------------------------------------------------------------
+# TestOpenAIBackend
+# ---------------------------------------------------------------------------
+
+
+class TestOpenAIBackend:
+    """Tests for OpenAIBackend with mocked SDK."""
+
+    def test_complete_calls_chat_completions(self):
+        mock_mod = _MockOpenAIModule()
+        mock_client = MagicMock()
+        mock_mod.OpenAI.return_value = mock_client
+
+        mock_choice = MagicMock()
+        mock_choice.message.content = "completion text"
+        mock_response = MagicMock()
+        mock_response.choices = [mock_choice]
+        mock_client.chat.completions.create.return_value = mock_response
+
+        with (
+            patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}),
+            patch.dict("sys.modules", {"openai": mock_mod}),
+        ):
+            backend = OpenAIBackend()
+            result = backend.complete("test prompt")
+
+        mock_client.chat.completions.create.assert_called_once_with(
+            model=DEFAULT_MODELS["openai"],
+            messages=[{"role": "user", "content": "test prompt"}],
+        )
+        assert result == "completion text"
+
+    def test_uses_custom_model(self):
+        mock_mod = _MockOpenAIModule()
+        mock_client = MagicMock()
+        mock_mod.OpenAI.return_value = mock_client
+        mock_choice = MagicMock()
+        mock_choice.message.content = "ok"
+        mock_response = MagicMock()
+        mock_response.choices = [mock_choice]
+        mock_client.chat.completions.create.return_value = mock_response
+
+        with (
+            patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}),
+            patch.dict("sys.modules", {"openai": mock_mod}),
+        ):
+            backend = OpenAIBackend(model="gpt-custom")
+            backend.complete("p")
+
+        call_kwargs = mock_client.chat.completions.create.call_args
+        assert call_kwargs.kwargs["model"] == "gpt-custom"
+
+    @patch.dict("os.environ", {}, clear=True)
+    def test_raises_without_api_key(self):
+        with pytest.raises(ValueError, match="OPENAI_API_KEY"):
+            OpenAIBackend()

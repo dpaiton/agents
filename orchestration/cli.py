@@ -171,20 +171,97 @@ def cmd_judge(args: argparse.Namespace) -> int:
         print(f"Error: Reference file not found: {args.reference}", file=sys.stderr)
         return 1
 
-    # Placeholder evaluation logic - will be replaced by judge module
     rubric_name = args.rubric
+    providers = getattr(args, "provider", None) or []
+    model_override = getattr(args, "model", None)
+    economy = getattr(args, "economy", False)
 
-    # Simple placeholder scoring
-    result = {
-        "rubric": rubric_name,
-        "score": 0.75,  # Placeholder
-        "criteria": {
-            "correctness": {"score": 0.8, "feedback": "Response addresses the main points."},
-            "completeness": {"score": 0.7, "feedback": "Some details could be expanded."},
-            "clarity": {"score": 0.75, "feedback": "Well structured and readable."},
-        },
-        "summary": f"Evaluation using {rubric_name} rubric completed.",
-    }
+    if providers:
+        # Use real backends via judge engine
+        from orchestration.backends import (
+            backend_as_judge_fn,
+            create_backend,
+        )
+        from orchestration.judge import EvaluationCriterion, JudgeEngine
+
+        engine = JudgeEngine()
+
+        # Build rubric criteria from RUBRICS dict
+        rubric_def = RUBRICS.get(rubric_name)
+        if not rubric_def:
+            print(f"Error: Rubric not found: {rubric_name}", file=sys.stderr)
+            print(f"Available rubrics: {', '.join(RUBRICS.keys())}", file=sys.stderr)
+            return 1
+
+        rubric = [
+            EvaluationCriterion(
+                name=c["name"],
+                description=c["description"],
+                scale=(1, 5),
+                weight=c["weight"],
+            )
+            for c in rubric_def["criteria"]
+        ]
+
+        judge_fns = []
+        for provider in providers:
+            try:
+                backend = create_backend(
+                    provider, model=model_override, economy=economy,
+                )
+                judge_fns.append(backend_as_judge_fn(backend))
+            except ValueError as e:
+                print(f"Error creating {provider} backend: {e}", file=sys.stderr)
+                return 1
+
+        if len(judge_fns) == 1:
+            report = engine.evaluate(
+                response=response,
+                rubric=rubric,
+                reference=reference,
+                judge_fn=judge_fns[0],
+            )
+        else:
+            report = engine.multi_model_ensemble(
+                response=response,
+                rubric=rubric,
+                judge_fns=judge_fns,
+                reference=reference,
+            )
+
+        result = {
+            "rubric": rubric_name,
+            "score": report.total,
+            "confidence": report.confidence,
+            "reasoning": report.reasoning,
+            "safety_flag": report.safety_flag,
+            "criteria": {
+                s.criterion.name: {"score": s.score, "feedback": s.reasoning}
+                for s in report.scores
+            },
+            "summary": f"Evaluation using {rubric_name} rubric completed.",
+        }
+    else:
+        # Placeholder evaluation logic when no providers given
+        result = {
+            "rubric": rubric_name,
+            "score": 0.75,  # Placeholder
+            "criteria": {
+                "correctness": {
+                    "score": 0.8,
+                    "feedback": "Response addresses the main points.",
+                },
+                "completeness": {
+                    "score": 0.7,
+                    "feedback": "Some details could be expanded.",
+                },
+                "clarity": {
+                    "score": 0.75,
+                    "feedback": "Well structured and readable.",
+                },
+            },
+            "summary": f"Evaluation using {rubric_name} rubric completed.",
+        }
 
     print(format_output(result, args.format))
     return 0
@@ -211,6 +288,17 @@ def setup_judge_parser(subparsers: argparse._SubParsersAction) -> None:
         "--rubric",
         required=True,
         help="Name of the rubric to use for evaluation",
+    )
+    parser.add_argument(
+        "--provider",
+        action="append",
+        default=[],
+        help="LLM provider to use (repeatable: --provider anthropic --provider google)",
+    )
+    parser.add_argument(
+        "--model",
+        default=None,
+        help="Override model name for all providers",
     )
     parser.add_argument(
         "--format",
