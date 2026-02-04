@@ -673,27 +673,47 @@ def cmd_sync_worktrees(args: argparse.Namespace) -> int:
 
 
 def cmd_sync(args: argparse.Namespace) -> int:
-    """Handle sync command, dispatching to subcommands or defaulting to comments."""
+    """Handle sync command, dispatching to subcommands.
+
+    Bare ``eco sync`` runs both comment processing and worktree rebase.
+    Explicit subcommands (``eco sync comments``, ``eco sync worktrees``)
+    run only their respective part.
+    """
     sync_command = getattr(args, "sync_command", None)
+
     if sync_command == "worktrees":
         return cmd_sync_worktrees(args)
-    # Default: process comments (bare 'eco sync' or 'eco sync comments')
-    return cmd_sync_comments(args)
+
+    if sync_command == "comments":
+        return cmd_sync_comments(args)
+
+    # No subcommand — run both: comments first, then worktree rebase
+    rc = cmd_sync_comments(args)
+
+    # Provide defaults for worktree-specific flags
+    if not hasattr(args, "verbose"):
+        args.verbose = False
+    if not hasattr(args, "no_push"):
+        args.no_push = False
+
+    print()  # visual separator
+    wt_rc = cmd_sync_worktrees(args)
+    return rc or wt_rc
 
 
 def setup_sync_parser(subparsers: argparse._SubParsersAction) -> None:
     """Set up the sync subcommand parser with nested subcommands."""
     parser = subparsers.add_parser(
         "sync",
-        help="Process comments or sync worktrees",
+        help="Process comments and sync worktrees",
         description=(
-            "Process unresolved GitHub comments (default) or synchronize worktrees. "
-            "Use 'sync' or 'sync comments' to process comments, "
-            "'sync worktrees' to manage git worktrees."
+            "Process unresolved GitHub comments and synchronize worktrees. "
+            "Bare 'sync' runs both. Use 'sync comments' or 'sync worktrees' "
+            "to run only one part."
         ),
     )
 
-    # Top-level flags for comment processing (available on bare 'eco sync')
+    # Top-level flags (available on bare 'eco sync')
     parser.add_argument(
         "--pr",
         type=int,
@@ -717,6 +737,18 @@ def setup_sync_parser(subparsers: argparse._SubParsersAction) -> None:
         action="store_true",
         default=False,
         help="Process comments sequentially instead of in parallel",
+    )
+    parser.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        default=False,
+        help="Show detailed output for worktree sync",
+    )
+    parser.add_argument(
+        "--no-push",
+        action="store_true",
+        default=False,
+        help="Skip force-pushing rebased branches",
     )
 
     sync_subparsers = parser.add_subparsers(
