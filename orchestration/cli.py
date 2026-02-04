@@ -472,7 +472,65 @@ def _detect_default_branch() -> str:
     return "main"
 
 
-def cmd_sync(args: argparse.Namespace) -> int:
+def cmd_sync_comments(args: argparse.Namespace) -> int:
+    """Process unresolved GitHub comments on issues and PRs."""
+    from orchestration.sync_engine import (
+        ActionExecutor,
+        CommentFetcher,
+        IntentClassifier,
+        SyncHistory,
+    )
+
+    dry_run = getattr(args, "dry_run", False)
+    pr_num = getattr(args, "pr", None)
+    issue_num = getattr(args, "issue", None)
+
+    fetcher = CommentFetcher()
+    classifier = IntentClassifier()
+    executor = ActionExecutor()
+    history = SyncHistory()
+
+    # Fetch comments
+    if pr_num:
+        comments = fetcher.fetch_pr_comments(pr_num)
+        comments.extend(fetcher.fetch_pr_review_threads(pr_num))
+    elif issue_num:
+        comments = fetcher.fetch_issue_comments(issue_num)
+    else:
+        comments = fetcher.fetch_all_open()
+
+    if not comments:
+        print("No unresolved comments found.")
+        return 0
+
+    # Filter already-processed comments
+    new_comments = [c for c in comments if not history.is_processed(c.id)]
+    if not new_comments:
+        print("All comments already processed.")
+        return 0
+
+    print(f"Found {len(new_comments)} unprocessed comment(s)")
+
+    # Classify and execute
+    results = []
+    for comment in new_comments:
+        classified = classifier.classify(comment)
+        result = executor.execute(classified, dry_run=dry_run)
+        results.append(result)
+
+        status = "OK" if result.success else "FAIL"
+        print(f"  [{status}] {result.intent}: {result.summary}")
+
+        if not dry_run:
+            history.record(result)
+
+    # Summary
+    success_count = sum(1 for r in results if r.success)
+    print(f"\nSync complete: {success_count}/{len(results)} actions succeeded.")
+    return 0
+
+
+def cmd_sync_worktrees(args: argparse.Namespace) -> int:
     """Sync worktrees: fetch/prune, clean up merged branches, rebase remaining."""
     dry_run = args.dry_run
     verbose = args.verbose or dry_run
@@ -614,11 +672,92 @@ def cmd_sync(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_sync(args: argparse.Namespace) -> int:
+    """Handle sync command, dispatching to subcommands or defaulting to comments."""
+    sync_command = getattr(args, "sync_command", None)
+    if sync_command == "worktrees":
+        return cmd_sync_worktrees(args)
+    # Default: process comments (bare 'eco sync' or 'eco sync comments')
+    return cmd_sync_comments(args)
+
+
 def setup_sync_parser(subparsers: argparse._SubParsersAction) -> None:
-    """Set up the sync subcommand parser."""
+    """Set up the sync subcommand parser with nested subcommands."""
     parser = subparsers.add_parser(
         "sync",
-        help="Sync worktrees: fetch/prune, clean up merged, rebase remaining",
+        help="Process comments or sync worktrees",
+        description=(
+            "Process unresolved GitHub comments (default) or synchronize worktrees. "
+            "Use 'sync' or 'sync comments' to process comments, "
+            "'sync worktrees' to manage git worktrees."
+        ),
+    )
+
+    # Top-level flags for comment processing (available on bare 'eco sync')
+    parser.add_argument(
+        "--pr",
+        type=int,
+        default=None,
+        help="Process comments on this PR only",
+    )
+    parser.add_argument(
+        "--issue",
+        type=int,
+        default=None,
+        help="Process comments on this issue only",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=False,
+        help="Show plan without executing",
+    )
+    parser.add_argument(
+        "--sequential",
+        action="store_true",
+        default=False,
+        help="Process comments sequentially instead of in parallel",
+    )
+
+    sync_subparsers = parser.add_subparsers(
+        dest="sync_command",
+        metavar="SUBCOMMAND",
+    )
+
+    # sync comments
+    comments_parser = sync_subparsers.add_parser(
+        "comments",
+        help="Process unresolved GitHub comments (default)",
+    )
+    comments_parser.add_argument(
+        "--pr",
+        type=int,
+        default=None,
+        help="Process comments on this PR only",
+    )
+    comments_parser.add_argument(
+        "--issue",
+        type=int,
+        default=None,
+        help="Process comments on this issue only",
+    )
+    comments_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=False,
+        help="Show plan without executing",
+    )
+    comments_parser.add_argument(
+        "--sequential",
+        action="store_true",
+        default=False,
+        help="Process comments sequentially instead of in parallel",
+    )
+
+    # sync worktrees
+    worktrees_parser = sync_subparsers.add_parser(
+        "worktrees",
+        help="Fetch/prune, clean up merged worktrees, rebase remaining",
         description=(
             "Synchronize the local repository and all worktrees with the remote. "
             "Fetches and prunes remote tracking branches, removes worktrees whose "
@@ -627,25 +766,24 @@ def setup_sync_parser(subparsers: argparse._SubParsersAction) -> None:
             "rebased branches."
         ),
     )
-    parser.add_argument(
+    worktrees_parser.add_argument(
         "--dry-run",
         action="store_true",
         default=False,
         help="Show what would be done without making changes (implies --verbose)",
     )
-    parser.add_argument(
+    worktrees_parser.add_argument(
         "--verbose", "-v",
         action="store_true",
         default=False,
         help="Show detailed output",
     )
-    parser.add_argument(
+    worktrees_parser.add_argument(
         "--no-push",
         action="store_true",
         default=False,
         help="Skip force-pushing rebased branches",
     )
-    parser.set_defaults(func=cmd_sync)
 
 
 # -----------------------------------------------------------------------------
@@ -911,6 +1049,9 @@ def main() -> int:
 
     if args.command == "cost":
         return cmd_cost(args)
+
+    if args.command == "sync":
+        return cmd_sync(args)
 
     # Execute the subcommand
     if hasattr(args, "func"):
