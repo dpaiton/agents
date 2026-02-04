@@ -11,6 +11,8 @@ Usage:
     agents review --diff <(git diff main)
     agents rubric list
     agents rubric show code_review
+    agents sync                            # fetch/prune, clean merged worktrees, rebase remaining
+    agents sync --dry-run                  # preview sync actions without making changes
 
     eco route "Add a login page"           # economy mode: uses smaller, cheaper models
     eco judge --response r.txt --ref ref.txt --rubric code_review  # economy mode
@@ -24,6 +26,7 @@ When invoked as ``eco``, economy mode is enabled automatically.
 import argparse
 import json
 import os
+import subprocess
 import sys
 from typing import Any
 
@@ -411,6 +414,229 @@ def cmd_rubric(args: argparse.Namespace) -> int:
 
 
 # -----------------------------------------------------------------------------
+# Subcommand: sync
+# -----------------------------------------------------------------------------
+
+def _run_git(*cmd_args: str, cwd: str | None = None) -> tuple[int, str, str]:
+    """Run a git command and return (returncode, stdout, stderr)."""
+    result = subprocess.run(
+        ["git", *cmd_args],
+        capture_output=True,
+        text=True,
+        cwd=cwd,
+    )
+    return result.returncode, result.stdout.strip(), result.stderr.strip()
+
+
+def _parse_worktrees(porcelain_output: str) -> list[dict[str, str]]:
+    """Parse ``git worktree list --porcelain`` output into a list of dicts."""
+    worktrees: list[dict[str, str]] = []
+    current: dict[str, str] = {}
+    for line in porcelain_output.splitlines():
+        if line.startswith("worktree "):
+            if current:
+                worktrees.append(current)
+            current = {"path": line.split(" ", 1)[1]}
+        elif line.startswith("branch "):
+            current["branch"] = line.split(" ", 1)[1]
+        elif line == "bare":
+            current["bare"] = "true"
+        elif line == "detached":
+            current["detached"] = "true"
+        elif line == "":
+            if current:
+                worktrees.append(current)
+                current = {}
+    if current:
+        worktrees.append(current)
+    return worktrees
+
+
+def _detect_default_branch() -> str:
+    """Detect the default branch name (e.g. main or master)."""
+    rc, out, _ = _run_git("symbolic-ref", "refs/remotes/origin/HEAD", "--short")
+    if rc == 0 and "/" in out:
+        return out.split("/", 1)[1]
+    return "main"
+
+
+def cmd_sync(args: argparse.Namespace) -> int:
+    """Sync worktrees: fetch/prune, clean up merged branches, rebase remaining."""
+    dry_run = args.dry_run
+    verbose = args.verbose or dry_run
+
+    def log(msg: str) -> None:
+        if verbose:
+            print(msg)
+
+    def action(msg: str) -> None:
+        print(msg)
+
+    # Step 1: Fetch and prune remote tracking branches
+    action("Fetching and pruning remote tracking branches...")
+    if not dry_run:
+        rc, out, err = _run_git("fetch", "--prune", "origin")
+        if rc != 0:
+            print(f"Error: git fetch --prune failed: {err}", file=sys.stderr)
+            return 1
+        if out:
+            log(out)
+        if err:
+            log(err)
+
+    # Step 2: Detect default branch and update local copy
+    default_branch = _detect_default_branch()
+    log(f"Default branch: {default_branch}")
+
+    # Step 3: List all worktrees
+    rc, worktree_output, _ = _run_git("worktree", "list", "--porcelain")
+    if rc != 0:
+        print("Error: Could not list worktrees", file=sys.stderr)
+        return 1
+
+    worktrees = _parse_worktrees(worktree_output)
+    if not worktrees:
+        action("No worktrees found.")
+        return 0
+
+    # Find the worktree on the default branch and update it
+    for wt in worktrees:
+        branch_ref = wt.get("branch", "")
+        if branch_ref == f"refs/heads/{default_branch}":
+            action(f"Updating local {default_branch}...")
+            if not dry_run:
+                rc, out, err = _run_git(
+                    "pull", "--ff-only", "origin", default_branch, cwd=wt["path"]
+                )
+                if rc != 0:
+                    print(
+                        f"Warning: Could not fast-forward {default_branch}: {err}",
+                        file=sys.stderr,
+                    )
+                else:
+                    log(out or "Already up to date.")
+            break
+    else:
+        log(f"No worktree on {default_branch}, skipping local update")
+
+    # Step 4: Separate branch worktrees into stale (remote gone) and active
+    branch_worktrees = [
+        wt for wt in worktrees
+        if "branch" in wt and not wt["branch"].endswith(f"/{default_branch}")
+    ]
+
+    if not branch_worktrees:
+        action("No branch worktrees to sync.")
+        action("Sync complete: everything up to date.")
+        return 0
+
+    log(f"Found {len(branch_worktrees)} branch worktree(s)")
+
+    stale: list[tuple[dict[str, str], str]] = []
+    active: list[tuple[dict[str, str], str]] = []
+
+    for wt in branch_worktrees:
+        branch_name = wt["branch"].replace("refs/heads/", "")
+        remote_ref = f"refs/remotes/origin/{branch_name}"
+        rc, _, _ = _run_git("rev-parse", "--verify", remote_ref)
+        if rc != 0:
+            stale.append((wt, branch_name))
+        else:
+            active.append((wt, branch_name))
+
+    # Step 5: Remove stale worktrees and delete their local branches
+    for wt, branch_name in stale:
+        action(f"Removing worktree (branch merged/deleted): {wt['path']} [{branch_name}]")
+        if not dry_run:
+            rc, _, err = _run_git("worktree", "remove", "--force", wt["path"])
+            if rc != 0:
+                print(f"  Warning: worktree remove failed: {err}", file=sys.stderr)
+
+            rc, _, err = _run_git("branch", "-D", branch_name)
+            if rc != 0:
+                print(f"  Warning: branch delete failed: {err}", file=sys.stderr)
+            else:
+                log(f"  Deleted branch {branch_name}")
+
+    # Step 6: Rebase active worktree branches onto origin/<default>
+    rebase_target = f"origin/{default_branch}"
+    rebased: list[tuple[dict[str, str], str]] = []
+
+    for wt, branch_name in active:
+        action(f"Rebasing {branch_name} onto {rebase_target}...")
+        if not dry_run:
+            rc, out, err = _run_git("rebase", rebase_target, cwd=wt["path"])
+            if rc != 0:
+                print(f"  Error: rebase failed for {branch_name}: {err}", file=sys.stderr)
+                print(f"  Aborting rebase for {branch_name}", file=sys.stderr)
+                _run_git("rebase", "--abort", cwd=wt["path"])
+                continue
+            log(f"  {out or 'Already up to date.'}")
+        rebased.append((wt, branch_name))
+
+    # Step 7: Force-push rebased branches
+    if not args.no_push:
+        for wt, branch_name in rebased:
+            action(f"Pushing {branch_name}...")
+            if not dry_run:
+                rc, out, err = _run_git(
+                    "push", "--force-with-lease", "origin", branch_name, cwd=wt["path"]
+                )
+                if rc != 0:
+                    print(f"  Warning: push failed for {branch_name}: {err}", file=sys.stderr)
+                else:
+                    log(err or out or "Done.")
+    elif rebased:
+        log("Skipping push (--no-push)")
+
+    # Summary
+    parts = []
+    if stale:
+        parts.append(f"{len(stale)} merged worktree(s) removed")
+    if rebased:
+        parts.append(f"{len(rebased)} branch(es) rebased")
+    if not parts:
+        parts.append("everything up to date")
+
+    action(f"Sync complete: {', '.join(parts)}.")
+    return 0
+
+
+def setup_sync_parser(subparsers: argparse._SubParsersAction) -> None:
+    """Set up the sync subcommand parser."""
+    parser = subparsers.add_parser(
+        "sync",
+        help="Sync worktrees: fetch/prune, clean up merged, rebase remaining",
+        description=(
+            "Synchronize the local repository and all worktrees with the remote. "
+            "Fetches and prunes remote tracking branches, removes worktrees whose "
+            "remote branches have been deleted (merged PRs), rebases remaining "
+            "worktree branches onto the default branch, and force-pushes the "
+            "rebased branches."
+        ),
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=False,
+        help="Show what would be done without making changes (implies --verbose)",
+    )
+    parser.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        default=False,
+        help="Show detailed output",
+    )
+    parser.add_argument(
+        "--no-push",
+        action="store_true",
+        default=False,
+        help="Skip force-pushing rebased branches",
+    )
+    parser.set_defaults(func=cmd_sync)
+
+
+# -----------------------------------------------------------------------------
 # Main entry point
 # -----------------------------------------------------------------------------
 
@@ -458,6 +684,7 @@ def create_parser() -> argparse.ArgumentParser:
     setup_judge_parser(subparsers)
     setup_review_parser(subparsers)
     setup_rubric_parser(subparsers)
+    setup_sync_parser(subparsers)
 
     return parser
 
