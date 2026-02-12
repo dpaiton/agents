@@ -24,7 +24,7 @@ class TestTaskRun:
             run_id="abc123",
             task="Add login",
             task_type="feature",
-            agent_sequence=["test-writer", "engineer"],
+            agent_sequence=["architect", "performance-engineer", "orchestrator"],
             status="pending",
             model="claude-sonnet-4-20250514",
             started_at="2026-01-01T00:00:00Z",
@@ -42,7 +42,7 @@ class TestTaskRun:
             run_id="def456",
             task="Fix bug",
             task_type="bug_fix",
-            agent_sequence=["engineer"],
+            agent_sequence=["performance-engineer", "orchestrator", "reviewer"],
             status="complete",
             model="claude-haiku-3-5-20241022",
             started_at="2026-01-01T00:00:00Z",
@@ -106,8 +106,9 @@ class TestExecutionEngine:
         assert run.status == "pending"
         assert run.task == "Add a login page"
         assert run.task_type == "feature"
-        assert "test-writer" in run.agent_sequence
-        assert "engineer" in run.agent_sequence
+        assert "architect" in run.agent_sequence
+        assert "performance-engineer" in run.agent_sequence
+        assert "orchestrator" in run.agent_sequence
         assert run.run_id is not None
         assert len(run.run_id) == 12
 

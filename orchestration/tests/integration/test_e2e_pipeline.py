@@ -37,8 +37,8 @@ pytestmark = pytest.mark.integration
 
 
 class TestFeatureRequestPipeline:
-    """Hypothesis: A feature request routes through test-writer → engineer
-    → reviewer with medium priority, selects the correct model, and
+    """Hypothesis: A feature request routes through architect → performance-engineer
+    → orchestrator with medium priority, selects the correct model, and
     produces a valid evaluation report."""
 
     def test_classifies_as_feature(self):
@@ -46,20 +46,20 @@ class TestFeatureRequestPipeline:
         task_type = router.classify("Add input validation to the login form")
         assert task_type == TaskType.FEATURE
 
-    def test_routes_to_tdd_sequence(self):
+    def test_routes_to_architect_sequence(self):
         router = TaskRouter()
         decision = router.route("Add input validation to the login form")
-        assert decision.agent_sequence == ["test-writer", "engineer", "reviewer"]
+        assert decision.agent_sequence == ["architect", "performance-engineer", "orchestrator"]
 
     def test_feature_has_medium_priority(self):
         router = TaskRouter()
         decision = router.route("Add input validation to the login form")
         assert decision.priority == "medium"
 
-    def test_routing_table_enforces_tdd(self):
-        """TDD enforcement: features must start with test-writer."""
+    def test_routing_table_enforces_architecture_first(self):
+        """Architecture first: features must start with architect."""
         sequence = ROUTING_TABLE[TaskType.FEATURE]
-        assert sequence[0] == "test-writer"
+        assert sequence[0] == "architect"
 
     def test_full_pipeline_with_mock_judge(self):
         """Full pipeline: route → evaluate with mock judge → valid report."""
@@ -105,7 +105,7 @@ class TestFeatureRequestPipeline:
 
 
 class TestBugFixPipeline:
-    """Hypothesis: A bug report routes through test-writer → engineer
+    """Hypothesis: A bug report routes through performance-engineer → orchestrator
     → reviewer with high priority."""
 
     def test_classifies_as_bug_fix(self):
@@ -113,10 +113,10 @@ class TestBugFixPipeline:
         task_type = router.classify("Fix the null pointer error in auth module")
         assert task_type == TaskType.BUG_FIX
 
-    def test_routes_to_tdd_sequence(self):
+    def test_routes_to_performance_sequence(self):
         router = TaskRouter()
         decision = router.route("Fix the null pointer error in auth module")
-        assert decision.agent_sequence == ["test-writer", "engineer", "reviewer"]
+        assert decision.agent_sequence == ["performance-engineer", "orchestrator", "reviewer"]
 
     def test_bug_fix_has_high_priority(self):
         router = TaskRouter()
@@ -124,9 +124,9 @@ class TestBugFixPipeline:
         assert decision.priority == "high"
 
     def test_tdd_enforced_for_bugs(self):
-        """TDD enforcement: bugs must start with test-writer."""
+        """TDD enforcement: bugs must start with performance-engineer."""
         sequence = ROUTING_TABLE[TaskType.BUG_FIX]
-        assert sequence[0] == "test-writer"
+        assert sequence[0] == "performance-engineer"
 
     def test_bug_fix_pipeline_with_judge(self):
         """Full pipeline: route → evaluate → verify score structure."""
