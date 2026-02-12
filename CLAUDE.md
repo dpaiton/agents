@@ -264,14 +264,14 @@ agents/
 
 ### Overview
 
-Build a 3D realistic space simulation game using Unity with a deterministic, LLM-orchestrated asset generation pipeline powered by Blender Python scripting and multi-agent coordination.
+Build a 3D space game using Unity with a deterministic, LLM-orchestrated asset generation pipeline powered by Blender Python scripting and multi-agent coordination.
 
 **Key Features:**
-- NASA-inspired realism aesthetic (function-first industrial design)
+- Realistic aesthetic that feels believable (like GTA's approach to realism - fun first, plausible second)
 - Blender Python pipeline for procedural asset generation
 - Unity engine integration with C# components
 - CI/CD automation for headless Blender rendering
-- Quality validation (poly budgets, texel density, LOD levels, scale accuracy)
+- Quality guidelines (poly budgets, LOD levels, reasonable constraints)
 
 ### Phase Structure
 
@@ -285,27 +285,22 @@ Build a 3D realistic space simulation game using Unity with a deterministic, LLM
 | Phase 4 | [#77](https://github.com/dpaiton/agents/issues/77) | CI/CD automation | Pending |
 | Phase 5 | [#78](https://github.com/dpaiton/agents/issues/78) | End-to-end testing | Pending |
 
-### Quality Standards
+### Quality Guidelines
 
 **Art Direction:**
-- **Style:** NASA-inspired realism, simulation-grade fidelity
-- **Philosophy:** Function-first design, industrial plausibility
-- **Scale:** Real-world meters (1 Unity unit = 1 meter)
-- **Materials:** Physically accurate (titanium, carbon composite, aluminum, glass)
+- **Style:** Believable sci-fi aesthetic (feels realistic without being a simulation)
+- **Philosophy:** Gameplay and visual appeal first, then plausibility
+- **Scale:** Consistent units (1 Unity unit = 1 meter for reference)
+- **Approach:** Like GTA does driving - feels right, doesn't need to be accurate
 
-**Technical Constraints:**
-- **Poly Budgets:**
-  - Small ships: < 5k tris (LOD0)
-  - Medium ships: < 15k tris (LOD0)
-  - Large ships: < 40k tris (LOD0)
-- **Bevel Standards:**
-  - Standard edges: 0.02m
-  - Heavy structural: 0.04m
-  - Micro details: 0.005m
-- **Texel Density:**
-  - Standard surfaces: 512px/meter
-  - Hero assets: 1024px/meter
-- **LOD Levels:** Minimum 3 levels (LOD0, LOD1, LOD2)
+**Technical Guidelines (flexible, not strict rules):**
+- **Poly Budgets (targets):**
+  - Small ships: ~5k tris (LOD0)
+  - Medium ships: ~15k tris (LOD0)
+  - Large ships: ~40k tris (LOD0)
+  - *(Adjust based on gameplay needs and performance)*
+- **LOD Levels:** 2-3 levels recommended for performance
+- **Materials:** Whatever looks good and performs well
 
 ### Technical Stack
 
@@ -324,10 +319,10 @@ Located in `projects/unity-space-sim/.claude/agents/`:
 
 | Agent | Role | Responsibilities |
 |-------|------|------------------|
-| **unity-asset-designer** | 3D asset design | Wireframes, design specs, NASA-realism aesthetic |
+| **unity-asset-designer** | 3D asset design | Wireframes, design specs, believable sci-fi aesthetic |
 | **blender-engineer** | Blender Python scripting | bpy API, procedural modeling, materials, LOD generation, FBX export |
 | **unity-engineer** | Unity C# scripting | Asset import pipelines, component systems, scene management |
-| **gamedev-integration-engineer** | E2E pipeline testing | Blender→Unity validation, poly counts, materials, scale accuracy |
+| **gamedev-integration-engineer** | E2E pipeline testing | Blender→Unity validation, performance checks, visual quality |
 
 ### Routing Examples
 
