@@ -26,6 +26,11 @@ class TaskType(Enum):
     INTEGRATION = "integration"
     PERFORMANCE = "performance"
     PROJECT_MANAGEMENT = "project_mgmt"
+    # Unity Space Sim project-specific types
+    UNITY_ASSET_DESIGN = "unity_asset_design"
+    BLENDER_SCRIPTING = "blender_scripting"
+    UNITY_SCRIPTING = "unity_scripting"
+    GAMEDEV_INTEGRATION = "gamedev_integration"
     UNKNOWN = "unknown"
 
 
@@ -75,6 +80,11 @@ ROUTING_TABLE: dict[TaskType, list[str]] = {
     TaskType.REVIEW: ["reviewer"],
     # Docs (architect ensures API docs are complete)
     TaskType.DOCS: ["architect"],
+    # Unity Space Sim project-specific agents
+    TaskType.UNITY_ASSET_DESIGN: ["unity-asset-designer"],
+    TaskType.BLENDER_SCRIPTING: ["blender-engineer", "gamedev-integration-engineer"],
+    TaskType.UNITY_SCRIPTING: ["unity-engineer", "gamedev-integration-engineer"],
+    TaskType.GAMEDEV_INTEGRATION: ["gamedev-integration-engineer"],
     # Unknown routes to orchestrator
     TaskType.UNKNOWN: ["orchestrator"],
 }
@@ -94,12 +104,45 @@ PRIORITY_TABLE: dict[TaskType, str] = {
     TaskType.INTEGRATION: "high",  # Integration failures block releases
     TaskType.PERFORMANCE: "medium",
     TaskType.PROJECT_MANAGEMENT: "low",
+    # Unity Space Sim project-specific priorities
+    TaskType.UNITY_ASSET_DESIGN: "medium",
+    TaskType.BLENDER_SCRIPTING: "medium",
+    TaskType.UNITY_SCRIPTING: "medium",
+    TaskType.GAMEDEV_INTEGRATION: "high",  # Pipeline validation is critical
     TaskType.UNKNOWN: "low",
 }
 
 # Classification patterns - ordered by specificity (most specific first)
 # Pattern matching handles known task types (P6: Code Before Prompts)
 CLASSIFICATION_PATTERNS: list[tuple[TaskType, re.Pattern]] = [
+    # Unity Space Sim project-specific patterns (most specific, checked first)
+    # Asset design patterns (most specific - must come before general Unity/Blender)
+    (TaskType.UNITY_ASSET_DESIGN, re.compile(r"\bship\s+design\b", re.IGNORECASE)),
+    (TaskType.UNITY_ASSET_DESIGN, re.compile(r"\basset\s+design\b", re.IGNORECASE)),
+    (TaskType.UNITY_ASSET_DESIGN, re.compile(r"\b3d\s+design\b", re.IGNORECASE)),
+    (TaskType.UNITY_ASSET_DESIGN, re.compile(r"\bdesign\s+a\s+.*\s+asset\b", re.IGNORECASE)),
+    (TaskType.UNITY_ASSET_DESIGN, re.compile(r"\bnasa.inspired\b", re.IGNORECASE)),
+    # Integration/pipeline patterns (before Blender/Unity keywords)
+    (TaskType.GAMEDEV_INTEGRATION, re.compile(r"\bgamedev\s+integration\b", re.IGNORECASE)),
+    (TaskType.GAMEDEV_INTEGRATION, re.compile(r"\basset\s+pipeline\b", re.IGNORECASE)),
+    (TaskType.GAMEDEV_INTEGRATION, re.compile(r"\bblender\s+to\s+unity\b", re.IGNORECASE)),
+    (TaskType.GAMEDEV_INTEGRATION, re.compile(r"\bend.to.end.*pipeline\b", re.IGNORECASE)),
+    (TaskType.GAMEDEV_INTEGRATION, re.compile(r"\blod\s+validation\b", re.IGNORECASE)),
+    (TaskType.GAMEDEV_INTEGRATION, re.compile(r"\bpoly\s+count\b", re.IGNORECASE)),
+    # Blender scripting patterns
+    (TaskType.BLENDER_SCRIPTING, re.compile(r"\bblender\s+python\b", re.IGNORECASE)),
+    (TaskType.BLENDER_SCRIPTING, re.compile(r"\bbpy\b", re.IGNORECASE)),
+    (TaskType.BLENDER_SCRIPTING, re.compile(r"\bblender\s+script\b", re.IGNORECASE)),
+    (TaskType.BLENDER_SCRIPTING, re.compile(r"\bprocedural\s+modeling\b", re.IGNORECASE)),
+    (TaskType.BLENDER_SCRIPTING, re.compile(r"\bfbx\s+export\b", re.IGNORECASE)),
+    (TaskType.BLENDER_SCRIPTING, re.compile(r"\bblender\b", re.IGNORECASE)),
+    # Unity scripting patterns
+    (TaskType.UNITY_SCRIPTING, re.compile(r"\bunity\s+c#\b", re.IGNORECASE)),
+    (TaskType.UNITY_SCRIPTING, re.compile(r"\bunity\s+script\b", re.IGNORECASE)),
+    (TaskType.UNITY_SCRIPTING, re.compile(r"\bmonobehaviour\b", re.IGNORECASE)),
+    (TaskType.UNITY_SCRIPTING, re.compile(r"\bscriptableobject\b", re.IGNORECASE)),
+    (TaskType.UNITY_SCRIPTING, re.compile(r"\bunity\s+component\b", re.IGNORECASE)),
+    (TaskType.UNITY_SCRIPTING, re.compile(r"\bunity\b", re.IGNORECASE)),
     # Design patterns
     (TaskType.DESIGN, re.compile(r"\bdesign\b", re.IGNORECASE)),
     (TaskType.DESIGN, re.compile(r"\bui\b", re.IGNORECASE)),
@@ -168,7 +211,10 @@ CLASSIFICATION_PATTERNS: list[tuple[TaskType, re.Pattern]] = [
 ]
 
 # Pattern for extracting file paths from task descriptions
-FILE_PATH_PATTERN = re.compile(r"[\w./\-]+\.(?:py|js|ts|json|yaml|yml|md|txt|sh)")
+FILE_PATH_PATTERN = re.compile(r"[\w./\-]+\.(?:py|js|ts|json|yaml|yml|md|txt|sh|cs|fbx|blend)")
+
+# Pattern for detecting Unity Space Sim project paths
+UNITY_SPACE_SIM_PATH_PATTERN = re.compile(r"projects/unity-space-sim/")
 
 
 class TaskRouter:
@@ -210,10 +256,17 @@ class TaskRouter:
             A RoutingDecision containing task_type, agent_sequence,
             priority, and extracted context.
         """
+        context = self._extract_context(task_description)
         task_type = self.classify(task_description)
+
+        # Override task type based on file path context (monorepo routing)
+        if context.get("project") == "unity-space-sim":
+            task_type = self._detect_unity_space_sim_task_type(
+                task_description, context, task_type
+            )
+
         agent_sequence = ROUTING_TABLE[task_type].copy()
         priority = PRIORITY_TABLE[task_type]
-        context = self._extract_context(task_description)
 
         return RoutingDecision(
             task_type=task_type,
@@ -223,13 +276,13 @@ class TaskRouter:
         )
 
     def _extract_context(self, task_description: str) -> dict[str, Any]:
-        """Extract context (files, modules) from the task description.
+        """Extract context (files, modules, project) from the task description.
 
         Args:
             task_description: The task description to extract context from.
 
         Returns:
-            A dictionary containing extracted context like file paths.
+            A dictionary containing extracted context like file paths and project.
         """
         context: dict[str, Any] = {}
 
@@ -238,4 +291,46 @@ class TaskRouter:
         if files:
             context["files"] = files
 
+        # Detect Unity Space Sim project context from file paths
+        if UNITY_SPACE_SIM_PATH_PATTERN.search(task_description):
+            context["project"] = "unity-space-sim"
+
         return context
+
+    def _detect_unity_space_sim_task_type(
+        self,
+        task_description: str,
+        context: dict[str, Any],
+        fallback_type: TaskType,
+    ) -> TaskType:
+        """Detect specific Unity Space Sim task type based on file paths and keywords.
+
+        Args:
+            task_description: The task description.
+            context: Extracted context (files, project).
+            fallback_type: The default task type from classification.
+
+        Returns:
+            A Unity Space Sim specific TaskType if detected, otherwise fallback_type.
+        """
+        files = context.get("files", [])
+
+        # Path-based routing for Unity Space Sim
+        for file_path in files:
+            if "projects/unity-space-sim/blender/" in file_path and file_path.endswith(".py"):
+                return TaskType.BLENDER_SCRIPTING
+            if "projects/unity-space-sim/unity/" in file_path and file_path.endswith(".cs"):
+                return TaskType.UNITY_SCRIPTING
+
+        # If already classified as Unity Space Sim type, keep it
+        if fallback_type in (
+            TaskType.UNITY_ASSET_DESIGN,
+            TaskType.BLENDER_SCRIPTING,
+            TaskType.UNITY_SCRIPTING,
+            TaskType.GAMEDEV_INTEGRATION,
+        ):
+            return fallback_type
+
+        # Default Unity Space Sim routing based on general classification
+        # If no specific Unity type was detected but we're in the project, use fallback
+        return fallback_type
