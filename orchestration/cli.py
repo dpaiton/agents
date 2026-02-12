@@ -89,35 +89,16 @@ def cmd_route(args: argparse.Namespace) -> int:
         )
         return 1
 
-    # Placeholder routing logic - will be replaced by router module
-    # For now, provide a reasonable default based on keywords
-    task_lower = task.lower()
+    from orchestration.router import TaskRouter
 
-    if any(word in task_lower for word in ["fix", "bug", "error", "broken"]):
-        task_type = "bugfix"
-        sequence = ["engineer", "reviewer"]
-        priority = "high"
-    elif any(word in task_lower for word in ["add", "create", "new", "implement"]):
-        task_type = "feature"
-        sequence = ["test-writer", "engineer", "reviewer"]
-        priority = "medium"
-    elif any(word in task_lower for word in ["refactor", "clean", "improve"]):
-        task_type = "refactor"
-        sequence = ["engineer", "reviewer"]
-        priority = "low"
-    elif any(word in task_lower for word in ["doc", "readme", "comment"]):
-        task_type = "documentation"
-        sequence = ["writer", "reviewer"]
-        priority = "low"
-    else:
-        task_type = "feature"
-        sequence = ["engineer", "reviewer"]
-        priority = "medium"
+    router = TaskRouter()
+    decision = router.route(task)
 
     result = {
-        "task_type": task_type,
-        "sequence": sequence,
-        "priority": priority,
+        "task_type": decision.task_type.value,
+        "sequence": decision.agent_sequence,
+        "priority": decision.priority,
+        "context": decision.context,
         "task": task,
     }
 
@@ -242,26 +223,15 @@ def cmd_judge(args: argparse.Namespace) -> int:
             "summary": f"Evaluation using {rubric_name} rubric completed.",
         }
     else:
-        # Placeholder evaluation logic when no providers given
-        result = {
-            "rubric": rubric_name,
-            "score": 0.75,  # Placeholder
-            "criteria": {
-                "correctness": {
-                    "score": 0.8,
-                    "feedback": "Response addresses the main points.",
-                },
-                "completeness": {
-                    "score": 0.7,
-                    "feedback": "Some details could be expanded.",
-                },
-                "clarity": {
-                    "score": 0.75,
-                    "feedback": "Well structured and readable.",
-                },
-            },
-            "summary": f"Evaluation using {rubric_name} rubric completed.",
-        }
+        print(
+            "Error: --provider is required (e.g. --provider anthropic)",
+            file=sys.stderr,
+        )
+        print(
+            "Available providers: anthropic, google, openai",
+            file=sys.stderr,
+        )
+        return 1
 
     print(format_output(result, args.format))
     return 0
@@ -330,21 +300,14 @@ def cmd_review(args: argparse.Namespace) -> int:
         print("Error: No diff content provided", file=sys.stderr)
         return 1
 
-    # Placeholder review prompt generation - will be replaced by review module
-    review_prompt = f"""Please review the following code changes:
+    from orchestration.prompts.review_prompts import review_pr_prompt
+    from orchestration.rubrics import CODE_REVIEW_RUBRIC
 
-```diff
-{diff}
-```
-
-Consider the following aspects:
-1. Code correctness and potential bugs
-2. Code style and readability
-3. Performance implications
-4. Security considerations
-5. Test coverage
-
-Provide specific, actionable feedback."""
+    rubric_text = "\n".join(
+        f"- **{c.name}** (weight {c.weight}): {c.description}"
+        for c in CODE_REVIEW_RUBRIC
+    )
+    review_prompt = review_pr_prompt(diff, rubric_text)
 
     result = {
         "prompt": review_prompt,
@@ -384,40 +347,39 @@ def setup_review_parser(subparsers: argparse._SubParsersAction) -> None:
 # Subcommand: rubric
 # -----------------------------------------------------------------------------
 
-# Placeholder rubrics - will be replaced by rubric module
-RUBRICS = {
-    "code_review": {
-        "name": "code_review",
-        "description": "Evaluate code changes for quality and correctness",
-        "criteria": [
-            {"name": "correctness", "weight": 0.3, "description": "Code functions as intended"},
-            {"name": "readability", "weight": 0.2, "description": "Code is clear and well-structured"},
-            {"name": "performance", "weight": 0.2, "description": "Code is efficient"},
-            {"name": "security", "weight": 0.2, "description": "Code follows security best practices"},
-            {"name": "testing", "weight": 0.1, "description": "Adequate test coverage"},
-        ],
-    },
-    "documentation": {
-        "name": "documentation",
-        "description": "Evaluate documentation quality",
-        "criteria": [
-            {"name": "accuracy", "weight": 0.3, "description": "Information is correct"},
-            {"name": "completeness", "weight": 0.3, "description": "All necessary topics covered"},
-            {"name": "clarity", "weight": 0.2, "description": "Easy to understand"},
-            {"name": "examples", "weight": 0.2, "description": "Helpful examples provided"},
-        ],
-    },
-    "task_completion": {
-        "name": "task_completion",
-        "description": "Evaluate task completion quality",
-        "criteria": [
-            {"name": "requirements_met", "weight": 0.4, "description": "All requirements addressed"},
-            {"name": "quality", "weight": 0.3, "description": "Work is high quality"},
-            {"name": "efficiency", "weight": 0.15, "description": "Solution is efficient"},
-            {"name": "maintainability", "weight": 0.15, "description": "Solution is maintainable"},
-        ],
-    },
-}
+def _build_rubrics() -> dict[str, dict]:
+    """Build the RUBRICS dict from real rubric definitions in orchestration.rubrics."""
+    from orchestration.rubrics import CODE_REVIEW_RUBRIC, TEST_QUALITY_RUBRIC
+
+    def _rubric_to_dict(name: str, description: str, criteria: list) -> dict:
+        return {
+            "name": name,
+            "description": description,
+            "criteria": [
+                {
+                    "name": c.name,
+                    "weight": c.weight,
+                    "description": c.description,
+                }
+                for c in criteria
+            ],
+        }
+
+    return {
+        "code_review": _rubric_to_dict(
+            "code_review",
+            "Evaluate code changes for quality and correctness",
+            CODE_REVIEW_RUBRIC,
+        ),
+        "test_quality": _rubric_to_dict(
+            "test_quality",
+            "Evaluate test suite quality and TDD compliance",
+            TEST_QUALITY_RUBRIC,
+        ),
+    }
+
+
+RUBRICS = _build_rubrics()
 
 
 def cmd_rubric_list(args: argparse.Namespace) -> int:

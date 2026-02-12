@@ -14,6 +14,8 @@ Design Principles:
 from __future__ import annotations
 
 import json
+import logging
+import os
 import time
 import uuid
 from dataclasses import asdict, dataclass, field
@@ -24,6 +26,26 @@ from typing import Optional
 from orchestration.config import EcoConfig, load_config, select_model
 from orchestration.cost import CostCalculator, UsageRecord, UsageStore
 from orchestration.router import TaskRouter
+
+logger = logging.getLogger(__name__)
+
+# Map agent names to model selection keys in config.MODEL_TABLE
+AGENT_MODEL_KEY: dict[str, str] = {
+    "architect": "architecture",
+    "performance-engineer": "performance-analysis",
+    "orchestrator": "code-change",
+    "reviewer": "review",
+    "backend-engineer": "backend",
+    "frontend-engineer": "frontend",
+    "ml-engineer": "ml",
+    "infrastructure-engineer": "infrastructure",
+    "integration-engineer": "integration",
+    "designer": "design",
+    "project-manager": "project-management",
+}
+
+# Directory containing agent definition markdown files
+_AGENTS_DIR = Path(__file__).resolve().parent.parent / ".claude" / "agents"
 
 
 # ---------------------------------------------------------------------------
@@ -243,24 +265,91 @@ class ExecutionEngine:
     # --- internal helpers ---------------------------------------------------
 
     def _run_agent(self, agent: str, run: TaskRun) -> dict:
-        """Run a single agent step.
+        """Run a single agent step via the Anthropic API.
 
-        This is a placeholder that will be replaced with real agent
-        invocation. Currently returns a stub result.
+        Loads the agent definition from ``.claude/agents/{agent}.md``,
+        selects a model based on agent role, and calls the Anthropic
+        Messages API.  Token usage is extracted from the API response.
 
         Args:
-            agent: The agent name (e.g. "engineer", "test-writer").
+            agent: The agent name (e.g. "architect", "reviewer").
             run: The parent TaskRun for context.
 
         Returns:
-            A dict with keys: input_tokens, output_tokens, error (optional).
+            A dict with keys: agent, input_tokens, output_tokens,
+            output (str), and optionally error (str).
         """
-        # Placeholder: real implementation will invoke the agent
-        return {
-            "agent": agent,
-            "input_tokens": 0,
-            "output_tokens": 0,
-        }
+        try:
+            import anthropic
+        except ImportError:
+            return {
+                "agent": agent,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "error": "anthropic SDK not installed — run: uv sync --group dev",
+            }
+
+        # Resolve the agent definition file
+        system_prompt = _load_agent_definition(agent)
+
+        # Select model for this agent's role
+        model_key = AGENT_MODEL_KEY.get(agent, "code-change")
+        model = select_model(model_key, config=self.config, economy=self.economy)
+
+        # Build the user message with task context
+        parts = [f"## Task\n{run.task}"]
+        if run.issue:
+            parts.append(f"GitHub Issue: #{run.issue}")
+        if run.pr:
+            parts.append(f"GitHub PR: #{run.pr}")
+        parts.append(f"Task type: {run.task_type}")
+        parts.append(f"Agent sequence: {' → '.join(run.agent_sequence)}")
+        user_message = "\n\n".join(parts)
+
+        # Call the Anthropic API
+        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        if not api_key:
+            return {
+                "agent": agent,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "error": "ANTHROPIC_API_KEY not set",
+            }
+
+        try:
+            client = anthropic.Anthropic(api_key=api_key)
+            response = client.messages.create(
+                model=model,
+                max_tokens=4096,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_message}],
+            )
+
+            output_text = ""
+            for block in response.content:
+                if hasattr(block, "text"):
+                    output_text += block.text
+
+            logger.info(
+                "Agent %s completed: %d input, %d output tokens",
+                agent,
+                response.usage.input_tokens,
+                response.usage.output_tokens,
+            )
+
+            return {
+                "agent": agent,
+                "input_tokens": response.usage.input_tokens,
+                "output_tokens": response.usage.output_tokens,
+                "output": output_text,
+            }
+        except Exception as exc:
+            return {
+                "agent": agent,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "error": f"Agent {agent} failed: {exc}",
+            }
 
     def _record_run(self, run: TaskRun) -> None:
         """Append run state to the JSONL file."""
@@ -416,6 +505,24 @@ class DeployEngine:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+def _load_agent_definition(agent: str) -> str:
+    """Load the agent definition markdown file as a system prompt.
+
+    Falls back to a generic prompt if the file is missing.
+
+    Args:
+        agent: Agent name (e.g. "architect").
+
+    Returns:
+        The system prompt string.
+    """
+    agent_file = _AGENTS_DIR / f"{agent}.md"
+    if agent_file.is_file():
+        return agent_file.read_text()
+    logger.warning("Agent definition not found: %s", agent_file)
+    return f"You are a {agent} agent. Complete the assigned task thoroughly."
+
 
 def _now_iso() -> str:
     """Return the current UTC time as an ISO 8601 string."""
