@@ -248,7 +248,7 @@ class TestPairwiseDebiasing:
             # Always prefer whichever is labeled "Response A" (simulating position bias)
             return "Reasoning: Response A is better.\nWinner: A"
 
-        result = engine.pairwise_compare(
+        _result = engine.pairwise_compare(
             response_a="First response",
             response_b="Second response",
             rubric=rubric,

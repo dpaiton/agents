@@ -10,7 +10,6 @@ from orchestration.cost import (
     MODEL_PRICING,
     DEFAULT_PRICING,
     CostCalculator,
-    DailySummary,
     UsageRecord,
     UsageStore,
 )
@@ -255,7 +254,7 @@ class TestUsageStore:
         store = UsageStore(str(path))
         store.append(self._make_record())
         store.append(self._make_record())
-        lines = [l for l in path.read_text().splitlines() if l.strip()]
+        lines = [line for line in path.read_text().splitlines() if line.strip()]
         assert len(lines) == 2
         for line in lines:
             json.loads(line)  # each line is valid JSON
