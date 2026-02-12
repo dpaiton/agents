@@ -18,6 +18,14 @@ class TaskType(Enum):
     REVIEW = "review"
     DOCS = "docs"
     INFRASTRUCTURE = "infrastructure"
+    DESIGN = "design"
+    ARCHITECTURE = "architecture"
+    BACKEND = "backend"
+    FRONTEND = "frontend"
+    ML = "ml"
+    INTEGRATION = "integration"
+    PERFORMANCE = "performance"
+    PROJECT_MANAGEMENT = "project_mgmt"
     UNKNOWN = "unknown"
 
 
@@ -39,13 +47,35 @@ class RoutingDecision:
 
 
 # Deterministic routing table mapping TaskType to agent sequence (P5)
-# TDD enforcement: feature/bug -> [test-writer, engineer, reviewer]
+# TDD enforcement: features/bugs get performance-engineer first for tests
 ROUTING_TABLE: dict[TaskType, list[str]] = {
-    TaskType.FEATURE: ["test-writer", "engineer", "reviewer"],
-    TaskType.BUG_FIX: ["test-writer", "engineer", "reviewer"],
+    # Features get architect review, then orchestrator routes to specialized engineers
+    TaskType.FEATURE: ["architect", "performance-engineer", "orchestrator"],
+    # Bug fixes: performance engineer writes regression test, orchestrator picks engineer
+    TaskType.BUG_FIX: ["performance-engineer", "orchestrator", "reviewer"],
+    # Infrastructure: architect designs, infrastructure engineer implements
+    TaskType.INFRASTRUCTURE: ["architect", "infrastructure-engineer", "reviewer"],
+    # Design tasks go to designer
+    TaskType.DESIGN: ["designer"],
+    # Architecture tasks go to architect
+    TaskType.ARCHITECTURE: ["architect"],
+    # Backend-specific tasks
+    TaskType.BACKEND: ["performance-engineer", "backend-engineer", "reviewer"],
+    # Frontend-specific tasks
+    TaskType.FRONTEND: ["performance-engineer", "frontend-engineer", "reviewer"],
+    # ML tasks
+    TaskType.ML: ["ml-engineer", "performance-engineer", "reviewer"],
+    # Integration tasks
+    TaskType.INTEGRATION: ["integration-engineer", "reviewer"],
+    # Performance optimization
+    TaskType.PERFORMANCE: ["performance-engineer", "orchestrator"],
+    # Project management
+    TaskType.PROJECT_MANAGEMENT: ["project-manager"],
+    # Review tasks
     TaskType.REVIEW: ["reviewer"],
-    TaskType.DOCS: ["engineer"],
-    TaskType.INFRASTRUCTURE: ["engineer"],
+    # Docs (architect ensures API docs are complete)
+    TaskType.DOCS: ["architect"],
+    # Unknown routes to orchestrator
     TaskType.UNKNOWN: ["orchestrator"],
 }
 
@@ -56,12 +86,56 @@ PRIORITY_TABLE: dict[TaskType, str] = {
     TaskType.REVIEW: "medium",
     TaskType.DOCS: "low",
     TaskType.INFRASTRUCTURE: "medium",
+    TaskType.DESIGN: "medium",
+    TaskType.ARCHITECTURE: "high",  # Architectural decisions are high priority
+    TaskType.BACKEND: "medium",
+    TaskType.FRONTEND: "medium",
+    TaskType.ML: "medium",
+    TaskType.INTEGRATION: "high",  # Integration failures block releases
+    TaskType.PERFORMANCE: "medium",
+    TaskType.PROJECT_MANAGEMENT: "low",
     TaskType.UNKNOWN: "low",
 }
 
 # Classification patterns - ordered by specificity (most specific first)
 # Pattern matching handles known task types (P6: Code Before Prompts)
 CLASSIFICATION_PATTERNS: list[tuple[TaskType, re.Pattern]] = [
+    # Design patterns
+    (TaskType.DESIGN, re.compile(r"\bdesign\b", re.IGNORECASE)),
+    (TaskType.DESIGN, re.compile(r"\bui\b", re.IGNORECASE)),
+    (TaskType.DESIGN, re.compile(r"\bux\b", re.IGNORECASE)),
+    (TaskType.DESIGN, re.compile(r"\bwireframe\b", re.IGNORECASE)),
+    # Architecture patterns
+    (TaskType.ARCHITECTURE, re.compile(r"\barchitecture\b", re.IGNORECASE)),
+    (TaskType.ARCHITECTURE, re.compile(r"\bsystem\s*design\b", re.IGNORECASE)),
+    (TaskType.ARCHITECTURE, re.compile(r"\bapi\s*spec\b", re.IGNORECASE)),
+    # Backend patterns
+    (TaskType.BACKEND, re.compile(r"\bapi\b", re.IGNORECASE)),
+    (TaskType.BACKEND, re.compile(r"\bdatabase\b", re.IGNORECASE)),
+    (TaskType.BACKEND, re.compile(r"\bbackend\b", re.IGNORECASE)),
+    (TaskType.BACKEND, re.compile(r"\bgrpc\b", re.IGNORECASE)),
+    # Frontend patterns
+    (TaskType.FRONTEND, re.compile(r"\bfrontend\b", re.IGNORECASE)),
+    (TaskType.FRONTEND, re.compile(r"\bcomponent\b", re.IGNORECASE)),
+    (TaskType.FRONTEND, re.compile(r"\breact\b", re.IGNORECASE)),
+    # ML patterns
+    (TaskType.ML, re.compile(r"\bmachine\s*learning\b", re.IGNORECASE)),
+    (TaskType.ML, re.compile(r"\bml\b", re.IGNORECASE)),
+    (TaskType.ML, re.compile(r"\bllm\b", re.IGNORECASE)),
+    (TaskType.ML, re.compile(r"\bmodel\b", re.IGNORECASE)),
+    # Integration patterns
+    (TaskType.INTEGRATION, re.compile(r"\bintegration\b", re.IGNORECASE)),
+    (TaskType.INTEGRATION, re.compile(r"\bend.to.end\b", re.IGNORECASE)),
+    (TaskType.INTEGRATION, re.compile(r"\be2e\b", re.IGNORECASE)),
+    # Performance patterns
+    (TaskType.PERFORMANCE, re.compile(r"\bperformance\b", re.IGNORECASE)),
+    (TaskType.PERFORMANCE, re.compile(r"\boptimize\b", re.IGNORECASE)),
+    (TaskType.PERFORMANCE, re.compile(r"\bprofile\b", re.IGNORECASE)),
+    (TaskType.PERFORMANCE, re.compile(r"\bbenchmark\b", re.IGNORECASE)),
+    # Project management patterns
+    (TaskType.PROJECT_MANAGEMENT, re.compile(r"\bepic\b", re.IGNORECASE)),
+    (TaskType.PROJECT_MANAGEMENT, re.compile(r"\bcost\s*estimate\b", re.IGNORECASE)),
+    (TaskType.PROJECT_MANAGEMENT, re.compile(r"\bsync\b", re.IGNORECASE)),
     # Review patterns (check first to avoid "fix" in "prefix" matching bug_fix)
     (TaskType.REVIEW, re.compile(r"\breview\b", re.IGNORECASE)),
     (TaskType.REVIEW, re.compile(r"\bpr\b", re.IGNORECASE)),

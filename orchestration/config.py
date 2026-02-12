@@ -31,9 +31,17 @@ MODEL_TABLE: dict[str, str] = {
     "issue-body-edit": "claude-haiku-3-5-20241022",
     "pr-description-edit": "claude-haiku-3-5-20241022",
     "code-change": "claude-sonnet-4-20250514",
-    "test-writing": "claude-sonnet-4-20250514",
+    "performance-analysis": "claude-sonnet-4-20250514",  # Renamed from test-writing
     "review": "claude-sonnet-4-20250514",
     "evaluation": "claude-opus-4-20250514",
+    "design": "claude-sonnet-4-20250514",
+    "architecture": "claude-sonnet-4-20250514",
+    "backend": "claude-sonnet-4-20250514",
+    "frontend": "claude-sonnet-4-20250514",
+    "ml": "claude-sonnet-4-20250514",  # Could use Opus for complex ML architecture
+    "infrastructure": "claude-sonnet-4-20250514",
+    "integration": "claude-sonnet-4-20250514",
+    "project-management": "claude-haiku-3-5-20241022",  # Efficiency focus
 }
 
 DEFAULT_MODEL = "claude-sonnet-4-20250514"
@@ -44,9 +52,17 @@ ECONOMY_MODEL_TABLE: dict[str, str] = {
     "issue-body-edit": "claude-haiku-3-5-20241022",
     "pr-description-edit": "claude-haiku-3-5-20241022",
     "code-change": "claude-haiku-3-5-20241022",
-    "test-writing": "claude-haiku-3-5-20241022",
+    "performance-analysis": "claude-haiku-3-5-20241022",  # Renamed from test-writing
     "review": "claude-haiku-3-5-20241022",
     "evaluation": "claude-sonnet-4-20250514",
+    "design": "claude-haiku-3-5-20241022",
+    "architecture": "claude-haiku-3-5-20241022",
+    "backend": "claude-haiku-3-5-20241022",
+    "frontend": "claude-haiku-3-5-20241022",
+    "ml": "claude-haiku-3-5-20241022",
+    "infrastructure": "claude-haiku-3-5-20241022",
+    "integration": "claude-haiku-3-5-20241022",
+    "project-management": "claude-haiku-3-5-20241022",
 }
 
 ECONOMY_DEFAULT_MODEL = "claude-haiku-3-5-20241022"

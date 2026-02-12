@@ -1,12 +1,14 @@
-# Write Tests
+# Write Tests and Analyze Performance
 
 ## Purpose
-Author test cases following TDD methodology — tests are written before implementation exists, defining expected behavior as executable specifications.
+Author test cases following TDD methodology and analyze performance. Tests are written before implementation exists, defining expected behavior as executable specifications. Performance analysis profiles code to identify bottlenecks and measure optimization impact.
 
 ## When to Use
 - Before implementing a new feature (TDD red phase)
 - Before fixing a bug (write a regression test that reproduces it)
 - When a spec or acceptance criteria needs to be encoded as tests
+- When performance optimization is needed (profile to identify bottlenecks)
+- After optimization work (measure performance improvements)
 
 ## Inputs
 - Issue specification with acceptance criteria
@@ -40,12 +42,22 @@ Each test follows the Arrange-Act-Assert pattern:
 Run the tests. They MUST fail because implementation does not yet exist. If tests pass without implementation, they are testing nothing.
 
 ### 6. Commit failing tests
-Commit the tests on a branch. The failing tests ARE the spec for the engineer.
+Commit the tests on a branch. The failing tests ARE the spec for the specialized engineer (backend, frontend, ML, infrastructure, integration).
+
+### 7. Performance Analysis (when applicable)
+When optimizing performance:
+1. **Profile first**: Use profiling tools to identify actual bottlenecks (not guesses)
+2. **Measure baseline**: Record performance metrics before optimization
+3. **Run benchmarks**: Measure latency, throughput, resource usage
+4. **Compare results**: Quantify performance improvements with clear visualizations
+5. **Build reusable tools**: Create performance testing utilities for future use
 
 ## Outputs
 - Test files following project conventions (`test_*.py`)
 - All tests failing (red phase confirmed)
 - Each acceptance criterion covered by at least one test
+- Performance reports with profiling data and visualizations (when applicable)
+- Benchmarking results comparing before/after optimizations (when applicable)
 
 ## Principles
 - **P7 Spec / Test / Evals First** — Tests define "done." They exist before code.
