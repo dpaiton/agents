@@ -229,6 +229,113 @@ Execution modes:
 - **PR scope test:** Does this PR address a single idea or component that can be reviewed and tested in isolation? If not, split it.
 - **Commit history is documentation.** Write descriptive commit messages. Future readers will `git log` before they read docs.
 
+## Monorepo Structure
+
+This repository uses a **monorepo** structure to host multiple projects alongside the core orchestration framework.
+
+```
+agents/
+├── .claude/                      # Global orchestration agents and skills
+│   ├── agents/                   # 12 core agent definitions
+│   └── skills/                   # Reusable orchestration skills
+├── orchestration/                # Core orchestration engine
+├── projects/                     # Project-specific code (monorepo)
+│   └── {project-name}/          # Each project has its own directory
+│       ├── .claude/             # Project-specific agents and skills
+│       │   ├── agents/          # Specialized agents for this project
+│       │   └── skills/          # Project-specific skills
+│       ├── src/                 # Project source code
+│       ├── tests/               # Project tests
+│       └── docs/                # Project documentation
+└── CLAUDE.md                    # This file
+```
+
+**Routing Convention:**
+- File paths in `projects/{project}/` automatically set project context
+- Project-specific agents (in `projects/{project}/.claude/agents/`) are loaded for project work
+- Global agents (in `.claude/agents/`) handle orchestration and cross-cutting concerns
+- Use GitHub labels (e.g., `unity-space-sim`) to mark project-specific issues
+
+## Unity Space Simulation Project
+
+**Epic:** [Issue #65](https://github.com/dpaiton/agents/issues/65)
+**Location:** `projects/unity-space-sim/`
+**Project Board:** [Unity Space Simulation](https://github.com/users/dpaiton/projects/2)
+
+### Overview
+
+Build a 3D space game using Unity with a deterministic, LLM-orchestrated asset generation pipeline powered by Blender Python scripting and multi-agent coordination.
+
+**Key Features:**
+- Realistic aesthetic that feels believable (like GTA's approach to realism - fun first, plausible second)
+- Blender Python pipeline for procedural asset generation
+- Unity engine integration with C# components
+- CI/CD automation for headless Blender rendering
+- Quality guidelines (poly budgets, LOD levels, reasonable constraints)
+
+### Quality Guidelines
+
+**Art Direction:**
+- **Style:** Believable sci-fi aesthetic (feels realistic without being a simulation)
+- **Philosophy:** Gameplay and visual appeal first, then plausibility
+- **Scale:** Consistent units (1 Unity unit = 1 meter for reference)
+- **Approach:** Like GTA does driving - feels right, doesn't need to be accurate
+
+**Technical Guidelines (flexible, not strict rules):**
+- **Poly Budgets (targets):**
+  - Small ships: ~5k tris (LOD0)
+  - Medium ships: ~15k tris (LOD0)
+  - Large ships: ~40k tris (LOD0)
+  - *(Adjust based on gameplay needs and performance)*
+- **LOD Levels:** 2-3 levels recommended for performance
+- **Materials:** Whatever looks good and performs well
+
+### Technical Stack
+
+| Tool | Version | Purpose |
+|------|---------|---------|
+| **Unity** | 2022.3 LTS+ | Game engine and runtime |
+| **Blender** | 3.6+ | 3D asset generation (headless mode) |
+| **Python** | 3.10+ | Blender scripting (bpy API) and automation |
+| **C#** | .NET Standard 2.1 | Unity scripting |
+| **uv** | Latest | Python package management |
+| **Git** | Latest | Version control |
+
+### Project-Specific Agents
+
+Located in `projects/unity-space-sim/.claude/agents/`:
+
+| Agent | Role | Responsibilities |
+|-------|------|------------------|
+| **unity-asset-designer** | 3D asset design | Wireframes, design specs, believable sci-fi aesthetic |
+| **blender-engineer** | Blender Python scripting | bpy API, procedural modeling, materials, LOD generation, FBX export |
+| **unity-engineer** | Unity C# scripting | Asset import pipelines, component systems, scene management |
+| **gamedev-integration-engineer** | E2E pipeline testing | Blender→Unity validation, performance checks, visual quality |
+
+### Routing Examples
+
+Tasks are automatically routed based on labels, keywords, and file paths:
+
+- **"Design a cargo ship asset"** → unity-asset-designer
+- **"Write Blender script to generate thruster geometry"** → blender-engineer
+- **"Create Unity component for ship flight controls"** → unity-engineer
+- **"Validate FBX export has correct scale and LODs"** → gamedev-integration-engineer
+- **Files in `projects/unity-space-sim/blender/`** → blender-engineer
+- **Files in `projects/unity-space-sim/unity/`** → unity-engineer
+- **Issues with `unity-space-sim` label** → Project-specific routing
+
+### Labels
+
+All Unity Space Sim work uses these labels:
+
+| Label | Use When |
+|-------|----------|
+| `unity-space-sim` | Any Unity Space Sim work |
+| `asset-pipeline` | Blender→Unity asset generation workflows |
+| `blender` | Blender Python scripting, bpy API |
+| `unity-engine` | Unity C# scripts, components, scenes |
+| `gamedev` | Game development features (flight controls, camera, gameplay) |
+
 ## Environment Configuration
 
 Required in `.env`:
