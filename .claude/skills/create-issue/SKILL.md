@@ -44,6 +44,23 @@ Apply one or more of these labels to every issue:
 | `priority:medium` | Important but not blocking |
 | `priority:low` | Nice to have |
 
+**Unity Space Simulation Project Labels:**
+
+| Label | Use when |
+|---|---|
+| `unity-space-sim` | Any Unity Space Sim work |
+| `asset-pipeline` | Blender→Unity asset generation workflows |
+| `blender` | Blender Python scripting, bpy API |
+| `unity-engine` | Unity C# scripts, components, scenes |
+| `gamedev` | Game development features (flight controls, camera, gameplay) |
+| `unity-meta-phase` | Meta Phase orchestration setup work |
+| `unity-phase-1` | Phase 1: Foundation & Documentation |
+| `unity-phase-1.5` | Phase 1.5: MVP - Drivable Ship |
+| `unity-phase-2` | Phase 2: Blender Pipeline |
+| `unity-phase-3` | Phase 3: Unity Integration |
+| `unity-phase-4` | Phase 4: CI/CD Automation |
+| `unity-phase-5` | Phase 5: End-to-End Testing |
+
 ## Body Template
 
 Use this template for the issue body (omit sections that don't apply):
