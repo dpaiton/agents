@@ -20,6 +20,7 @@ dev = [
 ]
 
 [project.scripts]
+agents = "orchestration.cli:main"
 eco = "orchestration.cli:main"
 
 [tool.pytest.ini_options]

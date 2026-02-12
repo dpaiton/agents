@@ -13,8 +13,8 @@ git clone https://github.com/dpaiton/agents.git && cd agents
 uv sync                          # Install dependencies
 cp .env.example .env             # Configure API keys (edit the file)
 python authorize_arcade.py       # Authorize GitHub OAuth tools
-sync --help                      # See available commands
-sync --dry-run                   # Preview without executing
+agents --help                    # See available commands
+agents sync --dry-run            # Preview without executing
 ```
 
 ---
@@ -29,30 +29,30 @@ The system provides both **standard** and **economy** modes. Prepend `eco` to an
 Fetches unresolved comments on issues/PRs, classifies intent, executes actions in parallel, resolves threads, posts summary.
 
 ```bash
-sync                        # Process all unresolved comments
-sync --issue 42             # Process specific issue
-sync --pr 18                # Process specific PR
-sync --dry-run              # Show plan without executing
-sync comments               # Process comments only (skip worktree cleanup)
-sync worktrees              # Clean merged worktrees only
+agents sync                        # Process all unresolved comments
+agents sync --issue 42             # Process specific issue
+agents sync --pr 18                # Process specific PR
+agents sync --dry-run              # Show plan without executing
+agents sync comments               # Process comments only (skip worktree cleanup)
+agents sync worktrees              # Clean merged worktrees only
 ```
 
 #### `run` - Direct Task Execution
 Execute a task through the orchestration pipeline without requiring a GitHub comment.
 
 ```bash
-run "Add input validation"  # Route and execute task
-run --issue 42              # Act on specific issue
-run --dry-run               # Show execution plan
+agents run "Add input validation"  # Route and execute task
+agents run --issue 42              # Act on specific issue
+agents run --dry-run               # Show execution plan
 ```
 
 #### `deploy` - Long-Running Watch Mode
 Deploy an agent that continuously monitors for new comments.
 
 ```bash
-deploy --issue 42 --watch   # Watch issue for new comments
-deploy --pr 18 --watch      # Watch PR for new comments
-deploy --dry-run            # Preview deployment
+agents deploy --issue 42 --watch   # Watch issue for new comments
+agents deploy --pr 18 --watch      # Watch PR for new comments
+agents deploy --dry-run            # Preview deployment
 ```
 
 ### Remote Execution
@@ -61,60 +61,60 @@ deploy --dry-run            # Preview deployment
 Run agents on Google Cloud Platform with automatic shutdown.
 
 ```bash
-remote run --issue 42       # Launch remote agent on GCP
-remote status               # List running instances
-remote logs <instance>      # Stream instance logs
-remote stop <instance>      # Terminate instance
+agents remote run --issue 42       # Launch remote agent on GCP
+agents remote status               # List running instances
+agents remote logs <instance>      # Stream instance logs
+agents remote stop <instance>      # Terminate instance
 ```
 
 ### Monitoring & Cost
 
 #### `cost` - Token Usage Tracking
 ```bash
-cost estimate "task"        # Estimate cost before execution
-cost history                # Show usage by day
-cost history --pr 18        # Filter by PR number
-cost log --model sonnet --input-tokens 1500 --output-tokens 800 --command route
+agents cost estimate "task"        # Estimate cost before execution
+agents cost history                # Show usage by day
+agents cost history --pr 18        # Filter by PR number
+agents cost log --model sonnet --input-tokens 1500 --output-tokens 800 --command route
 ```
 
 #### `status` - Running Agent Monitor
 ```bash
-status                      # Show active agents and token usage
-status --all                # Show all runs (not just active)
+agents status                      # Show active agents and token usage
+agents status --all                # Show all runs (not just active)
 ```
 
 ### Evaluation & Review
 
 #### `judge` - Evaluate Outputs Using Rubrics
 ```bash
-judge --response r.txt --reference ref.txt --rubric code_review
-judge --provider anthropic --provider google   # Multi-model ensemble
+agents judge --response r.txt --reference ref.txt --rubric code_review
+agents judge --provider anthropic --provider google   # Multi-model ensemble
 ```
 
 #### `review` - Generate Review Prompts
 ```bash
-review --diff <(git diff main)  # Create structured review prompt
-review --diff -                 # Read diff from stdin
+agents review --diff <(git diff main)  # Create structured review prompt
+agents review --diff -                 # Read diff from stdin
 ```
 
 #### `rubric` - Manage Evaluation Rubrics
 ```bash
-rubric list                     # List available rubrics
-rubric show code_review         # Show rubric details
+agents rubric list                     # List available rubrics
+agents rubric show code_review         # Show rubric details
 ```
 
 ### Utility Commands
 
 #### `route` - Classify and Route Tasks
 ```bash
-route "Add login feature"   # Determine task type and agent sequence
-route "Fix bug" --format json
+agents route "Add login feature"   # Determine task type and agent sequence
+agents route "Fix bug" --format json
 ```
 
 #### `test` - Run Test Suite
 ```bash
-test                        # Run all tests
-test --integration          # Run integration tests only
+agents test                        # Run all tests
+agents test --integration          # Run integration tests only
 ```
 
 **Additional tools:**
@@ -330,7 +330,7 @@ Examples:
 ```
 User comments on issue/PR
     ↓
-sync (fetch unresolved comments via gh CLI)
+agents sync (fetch unresolved comments via gh CLI)
     ↓
 Classify intent (pattern match → LLM fallback)
     ↓
@@ -345,8 +345,8 @@ Resolve comment threads (GraphQL)
 Post summary
 
 Execution Modes:
-  • Local:  sync / run / deploy
-  • Remote: remote run (GCP with auto-shutdown)
+  • Local:  agents sync / agents run / agents deploy
+  • Remote: agents remote run (GCP with auto-shutdown)
   • CI:     GitHub Actions (@claude mentions)
 ```
 
@@ -411,7 +411,7 @@ uv run pytest
 # Integration tests
 uv run pytest -m integration
 # or
-test --integration
+agents test --integration
 
 # Specific test file
 uv run pytest orchestration/tests/test_router.py -v
