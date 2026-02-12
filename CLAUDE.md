@@ -273,18 +273,6 @@ Build a 3D space game using Unity with a deterministic, LLM-orchestrated asset g
 - CI/CD automation for headless Blender rendering
 - Quality guidelines (poly budgets, LOD levels, reasonable constraints)
 
-### Phase Structure
-
-| Phase | Issue | Focus | Status |
-|-------|-------|-------|--------|
-| **Meta Phase** | [#73](https://github.com/dpaiton/agents/issues/73) | Orchestration repo setup | In Progress |
-| Phase 1 | [#74](https://github.com/dpaiton/agents/issues/74) | Foundation & documentation | Pending |
-| Phase 1.5 | [#79](https://github.com/dpaiton/agents/issues/79) | MVP - Drivable ship demo | Pending |
-| Phase 2 | [#75](https://github.com/dpaiton/agents/issues/75) | Blender pipeline scripts | Pending |
-| Phase 3 | [#76](https://github.com/dpaiton/agents/issues/76) | Unity integration scripts | Pending |
-| Phase 4 | [#77](https://github.com/dpaiton/agents/issues/77) | CI/CD automation | Pending |
-| Phase 5 | [#78](https://github.com/dpaiton/agents/issues/78) | End-to-end testing | Pending |
-
 ### Quality Guidelines
 
 **Art Direction:**
@@ -347,13 +335,6 @@ All Unity Space Sim work uses these labels:
 | `blender` | Blender Python scripting, bpy API |
 | `unity-engine` | Unity C# scripts, components, scenes |
 | `gamedev` | Game development features (flight controls, camera, gameplay) |
-| `unity-meta-phase` | Meta Phase orchestration setup work |
-| `unity-phase-1` | Phase 1 foundation work |
-| `unity-phase-1.5` | Phase 1.5 MVP work |
-| `unity-phase-2` | Phase 2 Blender pipeline work |
-| `unity-phase-3` | Phase 3 Unity integration work |
-| `unity-phase-4` | Phase 4 CI/CD work |
-| `unity-phase-5` | Phase 5 E2E testing work |
 
 ## Environment Configuration
 
