@@ -140,10 +140,18 @@ class TestExecutionEngine:
 
     def test_execute_real_run(self, tmp_path):
         engine = ExecutionEngine(state_dir=tmp_path / "state")
+
+        def mock_agent(agent, run):
+            return {"agent": agent, "input_tokens": 50, "output_tokens": 30, "output": "done"}
+
+        engine._run_agent = mock_agent  # type: ignore[assignment]
+
         run = engine.plan("Add a login page")
         result = engine.execute(run)
         assert result.status == "complete"
         assert result.dry_run is False
+        assert result.token_usage["input"] > 0
+        assert result.token_usage["output"] > 0
 
     def test_execute_records_run(self, tmp_path):
         state_dir = tmp_path / "state"
