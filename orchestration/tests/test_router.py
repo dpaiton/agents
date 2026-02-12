@@ -274,3 +274,122 @@ class TestTaskRouterRoute:
         """Bug fix tasks include reviewer at the end."""
         decision = router.route("fix login error")
         assert decision.agent_sequence[-1] == "reviewer"
+
+
+class TestUnitySpaceSimRouting:
+    """Tests for Unity Space Sim project-specific routing."""
+
+    @pytest.fixture
+    def router(self):
+        return TaskRouter()
+
+    # Unity Space Sim task type tests
+    def test_unity_space_sim_task_types_exist(self):
+        """Verify Unity Space Sim task types are defined."""
+        assert TaskType.UNITY_ASSET_DESIGN.value == "unity_asset_design"
+        assert TaskType.BLENDER_SCRIPTING.value == "blender_scripting"
+        assert TaskType.UNITY_SCRIPTING.value == "unity_scripting"
+        assert TaskType.GAMEDEV_INTEGRATION.value == "gamedev_integration"
+
+    def test_unity_space_sim_task_types_in_routing_table(self):
+        """Verify Unity Space Sim task types have routing entries."""
+        assert TaskType.UNITY_ASSET_DESIGN in ROUTING_TABLE
+        assert TaskType.BLENDER_SCRIPTING in ROUTING_TABLE
+        assert TaskType.UNITY_SCRIPTING in ROUTING_TABLE
+        assert TaskType.GAMEDEV_INTEGRATION in ROUTING_TABLE
+
+    # Keyword-based routing tests
+    def test_blender_keyword_routes_to_blender_engineer(self, router):
+        """Tasks mentioning Blender route to blender-engineer."""
+        decision = router.route("Write Blender Python script to generate LODs")
+        assert decision.task_type == TaskType.BLENDER_SCRIPTING
+        assert "blender-engineer" in decision.agent_sequence
+
+    def test_unity_keyword_routes_to_unity_engineer(self, router):
+        """Tasks mentioning Unity route to unity-engineer."""
+        decision = router.route("Create Unity C# script for ship flight controls")
+        assert decision.task_type == TaskType.UNITY_SCRIPTING
+        assert "unity-engineer" in decision.agent_sequence
+
+    def test_asset_design_keyword_routes_to_unity_asset_designer(self, router):
+        """Tasks about asset design route to unity-asset-designer."""
+        decision = router.route("Design a cargo ship asset for Unity Space Sim")
+        assert decision.task_type == TaskType.UNITY_ASSET_DESIGN
+        assert decision.agent_sequence == ["unity-asset-designer"]
+
+    def test_asset_pipeline_routes_to_gamedev_integration(self, router):
+        """Asset pipeline validation routes to gamedev-integration-engineer."""
+        decision = router.route("Test Blender to Unity asset pipeline end-to-end")
+        assert decision.task_type == TaskType.GAMEDEV_INTEGRATION
+        assert "gamedev-integration-engineer" in decision.agent_sequence
+
+    def test_poly_count_validation_routes_to_gamedev_integration(self, router):
+        """Poly count validation routes to gamedev-integration-engineer."""
+        decision = router.route("Validate poly count meets budget requirements")
+        assert decision.task_type == TaskType.GAMEDEV_INTEGRATION
+
+    # Path-based routing tests
+    def test_blender_path_routes_to_blender_engineer(self, router):
+        """Files in projects/unity-space-sim/blender/ route to blender-engineer."""
+        decision = router.route("Fix bug in projects/unity-space-sim/blender/generate_ship.py")
+        assert decision.context.get("project") == "unity-space-sim"
+        assert decision.task_type == TaskType.BLENDER_SCRIPTING
+        assert "blender-engineer" in decision.agent_sequence
+
+    def test_unity_path_routes_to_unity_engineer(self, router):
+        """Files in projects/unity-space-sim/unity/ route to unity-engineer."""
+        decision = router.route("Update projects/unity-space-sim/unity/FlightController.cs")
+        assert decision.context.get("project") == "unity-space-sim"
+        assert decision.task_type == TaskType.UNITY_SCRIPTING
+        assert "unity-engineer" in decision.agent_sequence
+
+    def test_unity_space_sim_project_context_detected(self, router):
+        """Tasks with unity-space-sim paths set project context."""
+        decision = router.route("Update file in projects/unity-space-sim/docs/README.md")
+        assert decision.context.get("project") == "unity-space-sim"
+
+    # Agent sequence tests
+    def test_blender_engineer_includes_integration_testing(self, router):
+        """Blender tasks include gamedev-integration-engineer for validation."""
+        decision = router.route("Implement Blender script for procedural modeling")
+        assert decision.task_type == TaskType.BLENDER_SCRIPTING
+        assert "gamedev-integration-engineer" in decision.agent_sequence
+
+    def test_unity_engineer_includes_integration_testing(self, router):
+        """Unity tasks include gamedev-integration-engineer for validation."""
+        decision = router.route("Add Unity component for ship controls")
+        assert decision.task_type == TaskType.UNITY_SCRIPTING
+        assert "gamedev-integration-engineer" in decision.agent_sequence
+
+    def test_gamedev_integration_high_priority(self, router):
+        """Pipeline validation tasks have high priority."""
+        decision = router.route("Validate asset pipeline end-to-end")
+        assert decision.task_type == TaskType.GAMEDEV_INTEGRATION
+        assert decision.priority == "high"
+
+    # Case sensitivity tests
+    def test_unity_routing_is_case_insensitive(self, router):
+        """Unity Space Sim routing is case-insensitive."""
+        decision_lower = router.route("write blender script")
+        decision_upper = router.route("Write BLENDER Script")
+        assert decision_lower.task_type == decision_upper.task_type
+        assert decision_lower.task_type == TaskType.BLENDER_SCRIPTING
+
+    # File extension tests
+    def test_cs_file_extension_detected(self, router):
+        """C# files (.cs) are extracted from task descriptions."""
+        decision = router.route("Fix bug in ShipController.cs")
+        assert "files" in decision.context
+        assert "ShipController.cs" in decision.context["files"]
+
+    def test_fbx_file_extension_detected(self, router):
+        """FBX files are extracted from task descriptions."""
+        decision = router.route("Update cargo_ship.fbx export settings")
+        assert "files" in decision.context
+        assert "cargo_ship.fbx" in decision.context["files"]
+
+    def test_blend_file_extension_detected(self, router):
+        """Blender files (.blend) are extracted from task descriptions."""
+        decision = router.route("Fix issue in ship_model.blend")
+        assert "files" in decision.context
+        assert "ship_model.blend" in decision.context["files"]
