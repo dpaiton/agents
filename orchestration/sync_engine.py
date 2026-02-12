@@ -507,13 +507,45 @@ class ActionExecutor:
                 summary=f"[dry-run] Would reply to {target}",
             )
 
-        # Replies require LLM generation — log for processing
-        return ActionResult(
-            comment_id=comment.id,
-            intent=CommentIntent.REPLY,
-            success=True,
-            summary=f"Reply queued for {target}",
-        )
+        # Generate LLM reply
+        try:
+            from orchestration.backends import create_backend
+
+            backend = create_backend("anthropic")
+
+            # Build prompt for reply
+            prompt = f"""You are reviewing a GitHub comment on {target}.
+
+Comment:
+{comment.body}
+
+Please provide a helpful, concise response addressing the feedback. Keep it professional and actionable."""
+
+            response = backend.complete(prompt)
+
+            # Post reply via gh CLI
+            if comment.pr:
+                rc, _, err = _run_gh("pr", "comment", str(comment.pr), "--body", response)
+            else:
+                rc, _, err = _run_gh("issue", "comment", str(comment.issue), "--body", response)
+
+            if rc != 0:
+                raise Exception(f"Failed to post comment: {err}")
+
+            return ActionResult(
+                comment_id=comment.id,
+                intent=CommentIntent.REPLY,
+                success=True,
+                summary=f"Posted reply to {target}",
+            )
+        except Exception as e:
+            return ActionResult(
+                comment_id=comment.id,
+                intent=CommentIntent.REPLY,
+                success=False,
+                summary=f"Failed to reply to {target}",
+                error=str(e),
+            )
 
     def _ask_clarification(self, comment: GitHubComment, dry_run: bool) -> ActionResult:
         target = f"PR #{comment.pr}" if comment.pr else f"issue #{comment.issue}"
