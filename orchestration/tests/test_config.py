@@ -29,9 +29,17 @@ class TestModelTable:
             "issue-body-edit",
             "pr-description-edit",
             "code-change",
-            "test-writing",
+            "performance-analysis",  # Renamed from test-writing
             "review",
             "evaluation",
+            "design",
+            "architecture",
+            "backend",
+            "frontend",
+            "ml",
+            "infrastructure",
+            "integration",
+            "project-management",
         }
         assert set(MODEL_TABLE.keys()) == expected_keys
 

@@ -19,7 +19,7 @@ import os
 
 load_dotenv()
 
-from arcadepy import Arcade
+from arcadepy import Arcade  # noqa: E402
 
 # Tools that require write authorization per service
 # Based on actual agent prompt requirements
@@ -64,21 +64,21 @@ def authorize_service(client: Arcade, user_id: str, service: str) -> bool:
         )
 
         if auth_response.status == "completed":
-            print(f"  Already authorized")
+            print("  Already authorized")
         else:
-            print(f"  Authorization required. Click this link:\n")
+            print("  Authorization required. Click this link:\n")
             print(f"    {auth_response.url}")
             print("\n  Waiting for authorization...")
 
             try:
                 if auth_response.id is None:
-                    print(f"  Error: No authorization ID returned")
+                    print("  Error: No authorization ID returned")
                     all_authorized = False
                     continue
                 client.auth.wait_for_completion(auth_response.id)
-                print(f"  Authorized!")
+                print("  Authorized!")
             except KeyboardInterrupt:
-                print(f"\n\nAuthorization interrupted by user.")
+                print("\n\nAuthorization interrupted by user.")
                 print(f"Stopped at: {auth_tool}")
                 print(f"\nTo resume, run: python authorize_arcade.py {service}")
                 raise  # Let KeyboardInterrupt propagate to exit cleanly
@@ -109,7 +109,7 @@ def authorize_service(client: Arcade, user_id: str, service: str) -> bool:
             print("  - Invalid API credentials")
             print("  - Expired OAuth token (re-run authorization)")
             print("  - MCP gateway connectivity issues")
-            print(f"\nCheck your configuration at: https://api.arcade.dev/dashboard/mcp-gateways")
+            print("\nCheck your configuration at: https://api.arcade.dev/dashboard/mcp-gateways")
             all_authorized = False
 
     return all_authorized

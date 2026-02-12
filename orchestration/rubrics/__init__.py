@@ -35,8 +35,8 @@ class EvaluationCriterion:
         return self.scale[0] * self.weight
 
 
-from orchestration.rubrics.code_review import CODE_REVIEW_RUBRIC
-from orchestration.rubrics.test_quality import TEST_QUALITY_RUBRIC
+from orchestration.rubrics.code_review import CODE_REVIEW_RUBRIC  # noqa: E402
+from orchestration.rubrics.test_quality import TEST_QUALITY_RUBRIC  # noqa: E402
 
 __all__ = [
     "EvaluationCriterion",
