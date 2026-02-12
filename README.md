@@ -1,326 +1,457 @@
-# agents
+# Multi-Agent Orchestration System
 
-Multi-agent orchestration system that uses GitHub issues and PR comments as the coordination layer.
+A comment-driven development framework that coordinates 12 specialized AI agents to build software through GitHub issues and pull requests.
 
-## Overview
+**Core concept:** Comment on a GitHub issue or PR → Run `sync` → Agents classify intent, execute tasks in parallel (edit issues, push code, update PRs), resolve comment threads, and post summaries.
 
-This project coordinates AI agents -- orchestrator, engineer, test-writer, reviewer, issue-creator, and judge -- to develop software through comment-driven development. You write a comment on a GitHub issue or PR, run `sync` (or `eco sync` for economy mode with smaller, cheaper models), and agents classify intent, execute tasks in parallel (editing issues, pushing code, updating PRs), resolve comment threads, and post a summary. The system wraps deterministic scaffolding around probabilistic models, preferring code and CLI tools over prompts and agents whenever possible.
+---
 
 ## Quick Start
 
 ```bash
 git clone https://github.com/dpaiton/agents.git && cd agents
-uv sync
-cp .env.example .env  # Fill in API keys
-sync --help
-sync --dry-run
+uv sync                          # Install dependencies
+cp .env.example .env             # Configure API keys (edit the file)
+python authorize_arcade.py       # Authorize GitHub OAuth tools
+sync --help                      # See available commands
+sync --dry-run                   # Preview without executing
 ```
+
+---
+
+## CLI Commands
+
+The system provides both **standard** and **economy** modes. Prepend `eco` to any command (e.g., `eco sync`) to use smaller, cheaper models for cost-efficient execution.
+
+### Core Workflows
+
+#### `sync` - Process GitHub Comments (Primary Workflow)
+Fetches unresolved comments on issues/PRs, classifies intent, executes actions in parallel, resolves threads, posts summary.
+
+```bash
+sync                        # Process all unresolved comments
+sync --issue 42             # Process specific issue
+sync --pr 18                # Process specific PR
+sync --dry-run              # Show plan without executing
+sync comments               # Process comments only (skip worktree cleanup)
+sync worktrees              # Clean merged worktrees only
+```
+
+#### `run` - Direct Task Execution
+Execute a task through the orchestration pipeline without requiring a GitHub comment.
+
+```bash
+run "Add input validation"  # Route and execute task
+run --issue 42              # Act on specific issue
+run --dry-run               # Show execution plan
+```
+
+#### `deploy` - Long-Running Watch Mode
+Deploy an agent that continuously monitors for new comments.
+
+```bash
+deploy --issue 42 --watch   # Watch issue for new comments
+deploy --pr 18 --watch      # Watch PR for new comments
+deploy --dry-run            # Preview deployment
+```
+
+### Remote Execution
+
+#### `remote` - GCP Instance Management
+Run agents on Google Cloud Platform with automatic shutdown.
+
+```bash
+remote run --issue 42       # Launch remote agent on GCP
+remote status               # List running instances
+remote logs <instance>      # Stream instance logs
+remote stop <instance>      # Terminate instance
+```
+
+### Monitoring & Cost
+
+#### `cost` - Token Usage Tracking
+```bash
+cost estimate "task"        # Estimate cost before execution
+cost history                # Show usage by day
+cost history --pr 18        # Filter by PR number
+cost log --model sonnet --input-tokens 1500 --output-tokens 800 --command route
+```
+
+#### `status` - Running Agent Monitor
+```bash
+status                      # Show active agents and token usage
+status --all                # Show all runs (not just active)
+```
+
+### Evaluation & Review
+
+#### `judge` - Evaluate Outputs Using Rubrics
+```bash
+judge --response r.txt --reference ref.txt --rubric code_review
+judge --provider anthropic --provider google   # Multi-model ensemble
+```
+
+#### `review` - Generate Review Prompts
+```bash
+review --diff <(git diff main)  # Create structured review prompt
+review --diff -                 # Read diff from stdin
+```
+
+#### `rubric` - Manage Evaluation Rubrics
+```bash
+rubric list                     # List available rubrics
+rubric show code_review         # Show rubric details
+```
+
+### Utility Commands
+
+#### `route` - Classify and Route Tasks
+```bash
+route "Add login feature"   # Determine task type and agent sequence
+route "Fix bug" --format json
+```
+
+#### `test` - Run Test Suite
+```bash
+test                        # Run all tests
+test --integration          # Run integration tests only
+```
+
+**Additional tools:**
+- Linting: `uv run ruff check .`
+- Unit tests: `uv run pytest`
+- Integration tests: `uv run pytest -m integration`
+
+---
+
+## Agent System
+
+The orchestration framework coordinates **12 specialized agents**, each with focused expertise and clear constraints.
+
+### Coordination Agents
+
+| Agent | Role | Model | Key Responsibilities |
+|-------|------|-------|---------------------|
+| **Orchestrator** | Routes tasks to specialists | Sonnet | Analyzes context, decomposes multi-step work, coordinates agent sequences. Cannot write code. |
+| **Project Manager** | Coordinates tasks, estimates costs | Haiku | Runs `eco sync`, builds epics, tracks dependencies, maintains documentation accuracy. |
+| **Reviewer** | PR evaluation | Sonnet | Reviews against rubrics (correctness, testing, readability, consistency, scope). Cannot modify code. |
+| **Judge** | Output quality evaluation | Opus | LLM-as-judge ensemble evaluation, debiased pairwise comparison, reasoning before scores. |
+
+### Design & Architecture
+
+| Agent | Role | Model | Key Responsibilities |
+|-------|------|-------|---------------------|
+| **Designer** | UI/UX design | Sonnet | Wireframes, design specs, minimalist principles. Cannot write production code. |
+| **Architect** | System architecture | Sonnet | API specs, system design, tech selection. Follows UNIX philosophy. Cannot implement. |
+
+### Engineering Specialists
+
+| Agent | Role | Model | Key Responsibilities |
+|-------|------|-------|---------------------|
+| **Backend Engineer** | Data & APIs | Sonnet | Databases, pipelines, REST/gRPC/GraphQL APIs. Cannot write frontend code. |
+| **Frontend Engineer** | UI & UX implementation | Sonnet | React/Vue/Svelte components, responsive/accessible interfaces. Cannot write backend logic. |
+| **ML Engineer** | Machine learning systems | Sonnet/Opus | Model training, prompt engineering, experiment tracking (W&B, MLFlow). |
+| **Infrastructure Engineer** | Deployment & operations | Sonnet | CI/CD, containers (Docker/K8s), monitoring (Grafana/Prometheus). Cannot modify app code. |
+| **Integration Engineer** | Cross-cutting concerns | Sonnet | E2E tests, API compatibility, glue code. Ensures components work together. |
+| **Performance Engineer** | Testing & optimization | Sonnet | TDD (writes tests first), performance profiling, benchmarking. Cannot write implementation. |
+
+### Routing Logic
+
+Tasks are automatically routed based on keywords and context:
+
+- **Features** → Architect → Performance Engineer → Orchestrator (picks specialist)
+- **Bugs** → Performance Engineer (regression test) → Orchestrator (picks specialist) → Reviewer
+- **Design** → Designer
+- **Infrastructure** → Architect → Infrastructure Engineer → Reviewer
+- **Performance** → Performance Engineer → Orchestrator
+
+See [routing documentation](.claude/skills/route-task/SKILL.md) for detailed patterns.
+
+---
+
+## Documentation
+
+### Project Guidance
+- **[CLAUDE.md](CLAUDE.md)** - Agent instructions and 16 core principles
+- **[Environment Setup](.env.example)** - Required environment variables
+
+### Agent Definitions
+All 12 agent role definitions with personalities, constraints, and tools:
+- [`.claude/agents/`](.claude/agents/) - Individual agent markdown files
+
+### Skills (Reusable Capabilities)
+- [Create Issue](.claude/skills/create-issue/SKILL.md) - Standardized GitHub issue creation
+- [Implement Feature](.claude/skills/implement-feature/SKILL.md) - TDD green phase (make tests pass)
+- [Write Tests](.claude/skills/write-tests/SKILL.md) - TDD red phase + performance analysis
+- [Route Task](.claude/skills/route-task/SKILL.md) - Task classification and routing logic
+- [Evaluate](.claude/skills/evaluate/SKILL.md) - LLM-as-judge evaluation
+- [Review PR](.claude/skills/review-pr/SKILL.md) - Pull request review process
+
+### Architecture & Design
+- [Agent Roles](docs/architecture/agent-roles.md) - Detailed agent responsibilities
+- [MoE Routing](docs/architecture/moe-routing.md) - Mixture-of-Experts routing patterns
+
+### Evaluation & Quality
+- [Rubrics](docs/evaluation/rubrics.md) - Evaluation criteria and scoring
+- [Judge Calibration](docs/evaluation/judge-calibration.md) - LLM-as-judge methodology
+- [Bias Awareness](docs/evaluation/bias-awareness.md) - Bias mitigation strategies
+
+### Rubrics
+- [Code Review Rubric](.claude/skills/review-pr/rubrics/code-review-rubric.md)
+- [General Evaluation Rubric](.claude/skills/evaluate/rubrics/general-rubric.md)
+- [Bias Awareness Checklists](.claude/skills/evaluate/rubrics/bias-awareness.md)
+
+---
 
 ## Prerequisites
 
-- **Python 3.12+** (project uses 3.13 by default via `.python-version`)
-- **[uv](https://docs.astral.sh/uv/)** -- Python package and project manager
-- **[gh CLI](https://cli.github.com/)** -- GitHub command-line tool, authenticated via `gh auth login`
-- **API keys:**
-  - Anthropic (required) -- for Claude-based agents
-  - Arcade (required) -- for OAuth-based GitHub tool authorization
-  - Google / OpenAI (optional) -- for alternative model backends
+- **Python 3.12+** (project uses 3.13 via `.python-version`)
+- **[uv](https://docs.astral.sh/uv/)** - Fast Python package manager
+- **[gh CLI](https://cli.github.com/)** - GitHub command-line tool (`gh auth login`)
+- **API Keys:**
+  - Anthropic API key (required) - Claude models
+  - Arcade API key (required) - OAuth for GitHub tools
+  - Google/OpenAI API keys (optional) - Alternative model backends
+
+---
 
 ## Installation
 
-1. **Install dependencies:**
-
-   ```bash
-   uv sync
-   ```
-
-2. **Configure environment variables:**
-
-   ```bash
-   cp .env.example .env
-   ```
-
-   Edit `.env` and fill in the required values. See the [Environment Variables](#environment-variables) section for the full list.
-
-3. **Authorize GitHub tools via Arcade:**
-
-   ```bash
-   python authorize_arcade.py          # Authorize all services
-   python authorize_arcade.py github   # Authorize GitHub only
-   ```
-
-   This triggers OAuth flows for 7 GitHub write tools (CreateBranch, CreatePullRequest, UpdatePullRequest, MergePullRequest, CreateIssueComment, CreateIssue, UpdateIssue). Follow the printed URLs to complete authorization.
-
-4. **Set up branch protection (optional):**
-
-   ```bash
-   ./.github/scripts/setup-branch-protection.sh
-   ```
-
-   Requires a public repo or GitHub Pro/Team/Enterprise for private repos.
-
-## Running Agents
-
-> **Economy mode:** Prepend `eco` to any command (e.g., `eco sync`, `eco run`) to use smaller, cheaper models for cost-efficient execution. The standard commands use the default (larger) models configured in your environment variables.
-
-### `sync` -- Primary workflow
-
-Fetches unresolved comments on issues and PRs, classifies intent, executes actions in parallel, resolves threads, and posts a summary.
+### 1. Install Dependencies
 
 ```bash
-sync                         # Process all unresolved comments
-sync --issue 42              # Process comments on a specific issue
-sync --pr 18                 # Process comments on a specific PR
-sync --dry-run               # Show the execution plan without acting
+uv sync
 ```
 
-### `run` -- Direct task execution
-
-Runs a task through the orchestration pipeline without requiring a GitHub comment.
+### 2. Configure Environment
 
 ```bash
-run "Add input validation"
-run --issue 42
+cp .env.example .env
 ```
 
-### `deploy` -- Long-running watch mode
+Edit `.env` and fill in required values:
 
-Deploys an agent that continuously watches an issue or PR for new comments.
+| Variable | Description | Required |
+|----------|-------------|----------|
+| `ANTHROPIC_API_KEY` | Claude API access | ✓ |
+| `ARCADE_API_KEY` | OAuth tool authorization | ✓ |
+| `ARCADE_USER_ID` | Agent identity (default: `agent@local`) | |
+| `GITHUB_REPO` | Target repository (e.g., `dpaiton/agents`) | ✓ |
+| `GITHUB_TOKEN` | GitHub personal access token | ✓ |
+| `ORCHESTRATOR_AGENT_MODEL` | Orchestrator/Architect model | |
+| `CODING_AGENT_MODEL` | Engineer models | |
+| `GITHUB_AGENT_MODEL` | GitHub agent model | |
+| `GOOGLE_API_KEY` | Gemini models (optional) | |
+| `OPENAI_API_KEY` | GPT models (optional) | |
+
+### 3. Authorize GitHub Tools
 
 ```bash
-deploy --issue 42 --watch
+python authorize_arcade.py          # All services
+python authorize_arcade.py github   # GitHub only
 ```
 
-### `remote run` -- GCP deployment
+This triggers OAuth flows for 7 GitHub write tools. Follow the printed URLs to complete authorization.
 
-Runs an agent remotely on Google Cloud with automatic shutdown.
+### 4. Optional: Branch Protection
 
 ```bash
-remote run --issue 42
+./.github/scripts/setup-branch-protection.sh
 ```
 
-### `cost` / `status` -- Monitoring
+Requires public repo or GitHub Pro/Team/Enterprise for private repos.
 
-```bash
-cost --pr 18                 # Estimate token cost for a PR
-status                       # Show running agents and token usage
-```
-
-### Testing and linting
-
-```bash
-uv run pytest                           # Unit tests
-uv run pytest -m integration            # Integration tests
-test --integration                      # Same, via CLI
-uv run ruff check .                     # Linter
-```
+---
 
 ## Development Workflows
 
-### Adding a feature
+### Adding a Feature
 
-1. Create a GitHub issue using the `[Feature]` title prefix and the issue body template (see [Creating an issue](#creating-an-issue)).
-2. The **test-writer** agent writes failing tests that define the acceptance criteria.
-3. The **engineer** agent implements the feature until tests pass.
-4. The **reviewer** agent evaluates the PR against the rubric (see [Reviewing a PR](#reviewing-a-pr)).
-5. A human (code owner) gives final approval and merges.
+1. **Create issue** with `[Feature]` prefix and acceptance criteria
+2. **Architect** designs system architecture and API specs
+3. **Performance Engineer** writes failing tests (TDD red phase)
+4. **Orchestrator** routes to appropriate specialist (Backend/Frontend/ML/Infrastructure)
+5. **Specialist Engineer** implements until tests pass (TDD green phase)
+6. **Reviewer** evaluates PR against rubric
+7. **Human** (code owner) gives final approval and merges
 
-### Fixing a bug
+### Fixing a Bug
 
-1. Reproduce the bug with a failing test -- the **test-writer** writes a minimal test that demonstrates the failure.
-2. The **engineer** implements the fix.
-3. Verify all tests pass, including the new regression test.
+1. **Performance Engineer** writes failing regression test
+2. **Orchestrator** routes to appropriate specialist
+3. **Specialist Engineer** implements fix
+4. Verify all tests pass including regression test
 
 ### Reviewing a PR
 
-The **reviewer** agent evaluates PRs using a rubric with 5 criteria, each scored out of 10:
+**Reviewer** agent evaluates using 5 criteria (each scored 0-10):
 
-1. **Correctness** -- Does the code do what it claims?
-2. **Test coverage** -- Are edge cases tested?
-3. **Readability** -- Is the code clear and well-structured?
-4. **Consistency** -- Does it follow existing patterns?
-5. **Scope** -- Is the PR minimal and focused?
+1. **Correctness** - Does the code do what it claims?
+2. **Test Coverage** - Are edge cases and error states tested?
+3. **Readability** - Clear structure, good naming, appropriate comments?
+4. **Consistency** - Follows existing patterns and conventions?
+5. **Scope** - Minimal, focused, single responsibility?
 
-The reviewer also applies a bias checklist to flag common issues: over-engineering, missing error handling, unclear naming, and unnecessary dependencies.
+Bias checklist flags: over-engineering, missing error handling, unclear naming, unnecessary dependencies.
 
-### Creating an issue
-
-Use the `create-issue` skill or `gh issue create` directly. Follow these conventions:
-
-**Title prefixes** (required):
-
-- `[Feature]` -- New functionality
-- `[Bug]` -- Bug fix
-- `[Test]` -- Test-only changes
-- `[Infrastructure]` -- Repo setup, CI, tooling
-- `[Docs]` -- Documentation
-- `[Epic]` -- High-level tracking issue
-
-**Labels:**
-
-| Label | Use when |
-|---|---|
-| `epic` | Top-level tracking epic |
-| `infrastructure` | Repo structure, CI, tooling |
-| `evaluation` | LLM-as-judge evaluation framework |
-| `orchestration` | Multi-agent orchestration and routing |
-| `agent` | Agent definitions and configuration |
-| `tdd` | Test-driven development workflow |
-| `placeholder` | Future work, not yet actionable |
-| `priority:high` | Must be done first |
-| `priority:medium` | Important but not blocking |
-| `priority:low` | Nice to have |
-
-**Example:**
-
-```bash
-gh issue create \
-  --title "[Feature] Add input validation for user forms" \
-  --label "agent,priority:medium" \
-  --body "$(cat <<'EOF'
-## Summary
-Add server-side input validation to prevent malformed data.
-
-## Acceptance Criteria
-- [ ] All user inputs are validated before processing
-- [ ] Validation errors return descriptive messages
-- [ ] Unit tests cover all validation rules
-
-## Verification
-uv run pytest tests/test_validation.py -v
-EOF
-)"
-```
+---
 
 ## Git Workflow
 
-- **Always rebase, never merge.** Use `git rebase origin/main` to resolve conflicts. This keeps PR diffs clean and reviewable.
-- **Small, isolated commits.** Each commit should be one logical change. If a commit message needs "and", split it.
-- **Minimal PRs.** A PR should do one thing. If an issue requires changes to unrelated areas, open multiple PRs and reference the issue from each.
-- **PR scope test:** Does this PR address a single idea or component that can be reviewed and tested in isolation? If not, split it.
-- **Commit history is documentation.** Write descriptive commit messages. Future readers will `git log` before they read docs.
+**Golden Rules:**
+- ✅ **Always rebase, never merge** (`git rebase origin/main`)
+- ✅ **Small, isolated commits** (one logical change per commit)
+- ✅ **Minimal PRs** (single idea/component, reviewable in isolation)
+- ✅ **Descriptive commit messages** (commit history is documentation)
 
-**Branch naming:**
-
+**Branch Naming:**
 ```
 <type>/<description>
 
-feat/add-input-validation
-fix/null-pointer-in-parser
-infra/ci-pipeline-setup
-docs/readme
+Examples:
+  feat/add-input-validation
+  fix/null-pointer-in-parser
+  infra/ci-pipeline-setup
+  docs/update-readme
 ```
 
-Types: `feat/`, `fix/`, `infra/`, `docs/`
+**PR Title Prefixes:**
+- `[Feature]` - New functionality
+- `[Bug]` - Bug fix
+- `[Test]` - Test-only changes
+- `[Infrastructure]` - CI, tooling, deployment
+- `[Docs]` - Documentation
+- `[Epic]` - High-level tracking issue
 
-## Agent Roles
-
-| Agent | Role | Model | Personality |
-|---|---|---|---|
-| orchestrator | Routes tasks to appropriate agents | sonnet | Strategic, decisive |
-| engineer | Writes production code | sonnet | Pragmatic, minimal |
-| test-writer | Writes tests before implementation (TDD) | sonnet | Thorough, skeptical |
-| reviewer | Reviews PRs against rubric | sonnet | Fair, evidence-based |
-| issue-creator | Creates and manages GitHub issues | haiku | Organized, consistent |
-| judge | Evaluates output quality (LLM-as-judge) | opus | Methodical, impartial |
-
-Agent models are configured via environment variables (`ORCHESTRATOR_AGENT_MODEL`, `GITHUB_AGENT_MODEL`, `CODING_AGENT_MODEL`).
+---
 
 ## Architecture
 
 ```
 User comments on issue/PR
-    |
-    v
-sync (fetches unresolved comments via gh CLI)
-    |
-    v
-Classify intent per comment (pattern match first, LLM fallback)
-    |
-    v
+    ↓
+sync (fetch unresolved comments via gh CLI)
+    ↓
+Classify intent (pattern match → LLM fallback)
+    ↓
 Parallel execution:
-    |-- gh issue edit (update issue body)
-    |-- git commit + push (change PR code)
-    |-- gh pr edit (update PR description)
-    +-- gh comment (reply to questions)
-    |
-    v
-Resolve comment threads (GraphQL resolveReviewThread)
-    |
-    v
+    ├─ gh issue edit (update issue body)
+    ├─ git commit + push (change PR code)
+    ├─ gh pr edit (update PR description)
+    └─ gh comment (reply to questions)
+    ↓
+Resolve comment threads (GraphQL)
+    ↓
 Post summary
 
-Execution modes:
-    Local:  sync / run / deploy
-    Remote: remote run (GCP, auto-shutdown)
-    CI:     GitHub Actions (@claude mentions)
+Execution Modes:
+  • Local:  sync / run / deploy
+  • Remote: remote run (GCP with auto-shutdown)
+  • CI:     GitHub Actions (@claude mentions)
 ```
 
-**authorize_arcade.py** handles OAuth-based service authorization:
+**Key Principles:**
+1. **Deterministic scaffolding** around probabilistic models
+2. **Code before prompts** - Use bash/CLI tools when possible
+3. **UNIX philosophy** - Do one thing well, composable tools
+4. **TDD-first** - Tests before implementation
+5. **Comment-driven** - GitHub as coordination layer
+6. **Parallel execution** - Independent tasks run concurrently
 
-1. Loads config from `.env` via `python-dotenv`
-2. Iterates over a `SERVICES` dictionary (each service defines `verify_tool`, `extract_name`, `auth_tools`)
-3. Authorizes each tool via `Arcade.tools.authorize()` (triggers OAuth flows)
-4. Verifies the connection by executing the service's verify tool
+See [CLAUDE.md](CLAUDE.md) for all 16 principles.
+
+---
 
 ## Project Structure
 
 ```
 agents/
-|-- .claude/
-|   +-- skills/
-|       +-- create-issue/        # Skill for creating standardized GitHub issues
-|           +-- SKILL.md
-|-- .github/
-|   |-- scripts/
-|   |   +-- setup-branch-protection.sh  # Configure branch protection rules
-|   +-- workflows/
-|       |-- claude.yml                  # CI: respond to @claude mentions
-|       +-- claude-code-review.yml      # CI: automated PR code review
-|-- authorize_arcade.py          # OAuth authorization for GitHub write tools
-|-- CLAUDE.md                    # Agent instructions and project principles
-|-- CODEOWNERS                   # Requires @dpaiton approval on all PRs
-|-- pyproject.toml               # Project metadata and dependencies
-|-- uv.lock                      # Locked dependency versions
-|-- .env.example                 # Template for environment variables
-|-- .gitignore                   # Standard Python gitignore
-+-- README.md                    # This file
+├── .claude/
+│   ├── agents/              # 12 agent role definitions (.md)
+│   └── skills/              # 6 reusable skills with rubrics
+│
+├── .github/
+│   ├── workflows/           # CI: @claude mentions, PR reviews
+│   └── scripts/             # Branch protection setup
+│
+├── orchestration/           # Core engine
+│   ├── cli.py              # CLI entry point
+│   ├── sync_engine.py      # Comment-driven sync
+│   ├── router.py           # Task routing logic
+│   ├── execution.py        # Execution engine
+│   ├── judge.py            # LLM-as-judge evaluation
+│   ├── backends.py         # Multi-model abstraction
+│   ├── cost.py             # Token tracking
+│   ├── remote.py           # GCP deployment
+│   ├── prompts/            # Prompt definitions
+│   ├── rubrics/            # Evaluation rubrics
+│   └── tests/              # Comprehensive test suite
+│
+├── docs/
+│   ├── architecture/       # System design
+│   └── evaluation/         # Judge & rubrics
+│
+├── deployment/
+│   └── gcp/                # Cloud configs
+│
+├── authorize_arcade.py     # OAuth authorization
+├── CLAUDE.md               # Agent instructions
+├── README.md               # This file
+└── pyproject.toml          # Dependencies
 ```
 
-## Environment Variables
+---
 
-Configure these in `.env` (copy from `.env.example`):
+## Testing
 
-| Variable | Description | Required |
-|---|---|---|
-| `ARCADE_API_KEY` | Arcade API key for OAuth-based tool authorization | Yes |
-| `ARCADE_USER_ID` | Agent identity for Arcade (defaults to `agent@local`) | No |
-| `GITHUB_REPO` | Target GitHub repository (e.g., `dpaiton/agents`) | Yes |
-| `GITHUB_TOKEN` | GitHub personal access token for API calls | Yes |
-| `ANTHROPIC_API_KEY` | Anthropic API key for Claude models | Yes |
-| `ORCHESTRATOR_AGENT_MODEL` | Model for the orchestrator agent | No |
-| `GITHUB_AGENT_MODEL` | Model for the GitHub agent | No |
-| `CODING_AGENT_MODEL` | Model for the coding agent | No |
-| `GOOGLE_API_KEY` | Google API key (optional, for Gemini models) | No |
-| `OPENAI_API_KEY` | OpenAI API key (optional, for GPT models) | No |
+```bash
+# Unit tests
+uv run pytest
 
-## Principles
+# Integration tests
+uv run pytest -m integration
+# or
+test --integration
 
-This project follows 16 principles (see `CLAUDE.md` for full details):
+# Specific test file
+uv run pytest orchestration/tests/test_router.py -v
 
-1. **User Centricity** -- Built around user goals, not tooling.
-2. **The Foundational Algorithm** -- Observe, Think, Plan, Build, Execute, Verify, Learn.
-3. **Clear Thinking First** -- Clarify the problem before writing the prompt.
-4. **Scaffolding > Model** -- System architecture matters more than which model you use.
-5. **Deterministic Infrastructure** -- AI is probabilistic; infrastructure should not be.
-6. **Code Before Prompts** -- If a bash script solves it, do not use AI.
-7. **Spec / Test / Evals First** -- Write tests before code. Measure if it works.
-8. **UNIX Philosophy** -- Do one thing well. Composable tools. Text interfaces.
-9. **ENG / SRE Principles** -- Version control, automation, monitoring.
-10. **CLI as Interface** -- CLI is faster, more scriptable, and more reliable than GUIs.
-11. **Goal > Code > CLI > Prompts > Agents** -- The decision hierarchy.
-12. **Skill Management** -- Modular capabilities that route intelligently based on context.
-13. **Memory System** -- Everything worth knowing gets captured.
-14. **Agent Personalities** -- Different work needs different approaches.
-15. **Science as Meta-Loop** -- Hypothesis, Experiment, Measure, Iterate.
-16. **Permission to Fail** -- Say "I don't know" instead of guessing. Escalate when uncertain.
+# With coverage
+uv run pytest --cov=orchestration
+
+# Linting
+uv run ruff check .
+```
+
+**Test Organization:**
+- `orchestration/tests/` - Unit tests (router, config, execution, judge, cost)
+- `orchestration/tests/integration/` - E2E pipeline and sync tests
+- Markers: `@pytest.mark.integration` for integration tests
+
+---
+
+## Contributing
+
+1. **Read the principles** - [CLAUDE.md](CLAUDE.md) defines the project philosophy
+2. **Follow the workflow** - TDD, small PRs, rebase not merge
+3. **Use the agents** - Comment on issues/PRs and let agents help
+4. **Write tests first** - Red → Green → Refactor
+5. **Keep PRs minimal** - Single idea, reviewable in isolation
+
+All PRs require approval from `@dpaiton` (see [CODEOWNERS](CODEOWNERS)).
+
+---
+
+## License
+
+See repository for license information.
+
+---
+
+## Links
+
+- **Repository:** https://github.com/dpaiton/agents
+- **Issues:** https://github.com/dpaiton/agents/issues
+- **Pull Requests:** https://github.com/dpaiton/agents/pulls
+
+For questions or support, open an issue.
