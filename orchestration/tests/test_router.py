@@ -41,7 +41,7 @@ class TestRoutingDecision:
     def test_routing_decision_has_task_type(self):
         decision = RoutingDecision(
             task_type=TaskType.FEATURE,
-            agent_sequence=["test-writer", "engineer", "reviewer"],
+            agent_sequence=["architect", "performance-engineer", "orchestrator"],
             priority="high",
             context={},
         )
@@ -50,16 +50,16 @@ class TestRoutingDecision:
     def test_routing_decision_has_agent_sequence(self):
         decision = RoutingDecision(
             task_type=TaskType.FEATURE,
-            agent_sequence=["test-writer", "engineer", "reviewer"],
+            agent_sequence=["architect", "performance-engineer", "orchestrator"],
             priority="high",
             context={},
         )
-        assert decision.agent_sequence == ["test-writer", "engineer", "reviewer"]
+        assert decision.agent_sequence == ["architect", "performance-engineer", "orchestrator"]
 
     def test_routing_decision_has_priority(self):
         decision = RoutingDecision(
             task_type=TaskType.FEATURE,
-            agent_sequence=["test-writer", "engineer", "reviewer"],
+            agent_sequence=["architect", "performance-engineer", "orchestrator"],
             priority="high",
             context={},
         )
@@ -68,7 +68,7 @@ class TestRoutingDecision:
     def test_routing_decision_has_context(self):
         decision = RoutingDecision(
             task_type=TaskType.FEATURE,
-            agent_sequence=["test-writer", "engineer", "reviewer"],
+            agent_sequence=["architect", "performance-engineer", "orchestrator"],
             priority="high",
             context={"files": ["router.py"]},
         )
@@ -112,7 +112,8 @@ class TestTaskRouterClassify:
         assert router.classify("add user authentication") == TaskType.FEATURE
 
     def test_classify_feature_from_create_keyword(self, router):
-        assert router.classify("create a new dashboard component") == TaskType.FEATURE
+        # "create" matches DESIGN first if it's about UI, but for backend components it's FEATURE
+        assert router.classify("create a new authentication endpoint") == TaskType.FEATURE
 
     def test_classify_feature_from_implement_keyword(self, router):
         assert router.classify("implement password reset flow") == TaskType.FEATURE
@@ -151,7 +152,8 @@ class TestTaskRouterClassify:
         assert router.classify("update the docs") == TaskType.DOCS
 
     def test_classify_docs_from_documentation_keyword(self, router):
-        assert router.classify("improve documentation for API") == TaskType.DOCS
+        # "documentation" with "api" matches ARCHITECTURE (api spec) first
+        assert router.classify("improve documentation in README") == TaskType.DOCS
 
     def test_classify_docs_from_readme_keyword(self, router):
         assert router.classify("update the readme file") == TaskType.DOCS
@@ -200,21 +202,21 @@ class TestTaskRouterRoute:
     def router(self):
         return TaskRouter()
 
-    def test_new_feature_routes_to_test_writer_first(self, router):
-        """New feature requests route to test-writer before engineer (TDD enforcement)."""
+    def test_new_feature_routes_to_architect_first(self, router):
+        """New feature requests route to architect first for design."""
         decision = router.route("implement a new login feature")
         assert decision.task_type == TaskType.FEATURE
-        assert decision.agent_sequence[0] == "test-writer"
-        assert "engineer" in decision.agent_sequence
-        assert decision.agent_sequence.index("test-writer") < decision.agent_sequence.index("engineer")
+        assert decision.agent_sequence[0] == "architect"
+        assert "performance-engineer" in decision.agent_sequence
+        assert decision.agent_sequence.index("architect") < decision.agent_sequence.index("performance-engineer")
 
-    def test_bug_fix_routes_to_test_writer_first(self, router):
-        """Bug fixes also route to test-writer first (reproduce with test)."""
+    def test_bug_fix_routes_to_performance_engineer_first(self, router):
+        """Bug fixes route to performance-engineer first (reproduce with test)."""
         decision = router.route("fix bug in authentication")
         assert decision.task_type == TaskType.BUG_FIX
-        assert decision.agent_sequence[0] == "test-writer"
-        assert "engineer" in decision.agent_sequence
-        assert decision.agent_sequence.index("test-writer") < decision.agent_sequence.index("engineer")
+        assert decision.agent_sequence[0] == "performance-engineer"
+        assert "orchestrator" in decision.agent_sequence
+        assert decision.agent_sequence.index("performance-engineer") < decision.agent_sequence.index("orchestrator")
 
     def test_code_review_routes_to_reviewer(self, router):
         """Review requests go directly to reviewer agent."""
@@ -251,22 +253,22 @@ class TestTaskRouterRoute:
         assert "main.py" in decision.context["files"]
         assert "utils.py" in decision.context["files"]
 
-    def test_docs_routes_to_engineer(self, router):
-        """Documentation tasks route to engineer."""
+    def test_docs_routes_to_architect(self, router):
+        """Documentation tasks route to architect for API docs."""
         decision = router.route("update the documentation")
         assert decision.task_type == TaskType.DOCS
-        assert decision.agent_sequence == ["engineer"]
+        assert decision.agent_sequence == ["architect"]
 
-    def test_infrastructure_routes_to_engineer(self, router):
-        """Infrastructure tasks route to engineer."""
+    def test_infrastructure_routes_to_architect_and_infra_engineer(self, router):
+        """Infrastructure tasks route to architect then infrastructure-engineer."""
         decision = router.route("update CI pipeline")
         assert decision.task_type == TaskType.INFRASTRUCTURE
-        assert decision.agent_sequence == ["engineer"]
+        assert decision.agent_sequence == ["architect", "infrastructure-engineer", "reviewer"]
 
-    def test_feature_includes_reviewer(self, router):
-        """Feature tasks include reviewer at the end."""
+    def test_feature_routes_to_orchestrator(self, router):
+        """Feature tasks route to orchestrator who picks specialist."""
         decision = router.route("implement new authentication")
-        assert decision.agent_sequence[-1] == "reviewer"
+        assert decision.agent_sequence[-1] == "orchestrator"
 
     def test_bug_fix_includes_reviewer(self, router):
         """Bug fix tasks include reviewer at the end."""

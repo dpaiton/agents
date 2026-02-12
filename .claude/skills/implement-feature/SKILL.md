@@ -4,8 +4,8 @@
 Write the minimal production code that makes existing failing tests pass (TDD green phase).
 
 ## When to Use
-- After the test-writer has created failing tests
-- When the engineer is assigned to implement a feature or fix a bug
+- After the performance-engineer has created failing tests
+- When a specialized engineer (backend, frontend, ML, infrastructure, integration) is assigned to implement a feature or fix a bug
 - During the green phase of TDD (red → **green** → refactor)
 
 ## Inputs
@@ -35,7 +35,7 @@ Write the simplest code that makes all tests pass. Do not:
 Run the test suite. All previously failing tests must now pass. No existing tests should break.
 
 ### 5. Minimal test changes only
-If a test has a minor issue (e.g., wrong import path due to module structure), fix it. Do NOT rewrite tests or add new tests — that is the test-writer's job.
+If a test has a minor issue (e.g., wrong import path due to module structure), fix it. Do NOT rewrite tests or add new tests — that is the performance-engineer's job.
 
 ### 6. Commit and create PR
 Follow git guidelines: small commits, descriptive messages, branch naming convention.

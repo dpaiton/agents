@@ -70,7 +70,7 @@ Use this template for the issue body (omit sections that don't apply):
 <!-- Which of the 16 principles apply and how? List 2-4 most relevant. -->
 
 ## Agent Assignment
-<!-- Which agent(s) should work on this: orchestrator, engineer, test-writer, reviewer, issue-creator, judge -->
+<!-- Which agent(s) should work on this: orchestrator, designer, architect, backend-engineer, frontend-engineer, ml-engineer, infrastructure-engineer, integration-engineer, performance-engineer, project-manager, reviewer, judge -->
 ```
 
 ## How to Create

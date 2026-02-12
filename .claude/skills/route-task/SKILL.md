@@ -22,24 +22,33 @@ Check labels and event types first — no LLM needed for obvious cases.
 |---|---|---|
 | 1 | PR event: review submitted | Judge |
 | 2 | PR event: opened or updated | Reviewer |
-| 3 | Issue label: `security` | Orchestrator > Test Writer > Engineer > Reviewer > Judge |
-| 4 | Issue label: `bug` | Orchestrator > Test Writer > Engineer > Reviewer |
-| 5 | Issue label: `feature` or `enhancement` | Orchestrator > Test Writer > Engineer > Reviewer |
-| 6 | Issue label: `refactor` | Orchestrator > Test Writer > Engineer > Reviewer |
-| 7 | Issue label: `docs` or `documentation` | Orchestrator > Engineer > Reviewer |
-| 8 | Issue label: `infra` or `ci` | Orchestrator > Engineer > Reviewer |
+| 3 | Issue label: `security` | Orchestrator > Performance Engineer > Orchestrator (picks specialist) > Reviewer > Judge |
+| 4 | Issue label: `bug` | Performance Engineer > Orchestrator (picks specialist) > Reviewer |
+| 5 | Issue label: `feature` or `enhancement` | Architect > Performance Engineer > Orchestrator (picks specialist) |
+| 6 | Issue label: `refactor` | Performance Engineer > Orchestrator (picks specialist) > Reviewer |
+| 7 | Issue label: `docs` or `documentation` | Architect |
+| 8 | Issue label: `infra` or `ci` | Architect > Infrastructure Engineer > Reviewer |
+| 9 | Issue label: `design` or `ui` | Designer |
+| 10 | Issue label: `ml` or `ai` | ML Engineer > Performance Engineer > Reviewer |
 
 Rules are evaluated top-to-bottom. First match wins.
 
 ### 2. Keyword pattern matching
 
 If no label/event match, check the task description for keywords:
-- `fix`, `bug`, `broken`, `error` → bug fix route
-- `add`, `create`, `implement`, `feature` → feature route
-- `review`, `PR`, `pull request` → reviewer
-- `docs`, `readme`, `documentation` → docs route
-- `refactor`, `clean`, `restructure` → refactor route
-- `deploy`, `CI`, `infra`, `pipeline` → infrastructure route
+- `design`, `ui`, `ux`, `wireframe` → Designer
+- `architecture`, `system design`, `api spec` → Architect
+- `api`, `database`, `backend`, `grpc` → Performance Engineer > Backend Engineer > Reviewer
+- `frontend`, `component`, `react` → Performance Engineer > Frontend Engineer > Reviewer
+- `machine learning`, `ml`, `llm`, `model` → ML Engineer > Performance Engineer > Reviewer
+- `integration`, `end-to-end`, `e2e` → Integration Engineer > Reviewer
+- `performance`, `optimize`, `profile`, `benchmark` → Performance Engineer > Orchestrator
+- `epic`, `cost estimate`, `sync` → Project Manager
+- `fix`, `bug`, `broken`, `error` → Performance Engineer > Orchestrator (picks specialist) > Reviewer
+- `add`, `create`, `implement`, `feature` → Architect > Performance Engineer > Orchestrator (picks specialist)
+- `review`, `PR`, `pull request` → Reviewer
+- `docs`, `readme`, `documentation` → Architect
+- `deploy`, `CI`, `infra`, `pipeline` → Architect > Infrastructure Engineer > Reviewer
 
 ### 3. LLM classification fallback
 
