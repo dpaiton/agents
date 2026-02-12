@@ -37,35 +37,143 @@ Goal → Code → CLI → Prompts → Agents
 4. Write prompts (only when judgment is needed)
 5. Invoke agents (last resort, for multi-step reasoning)
 
+## Working in This Repository
+
+**CRITICAL: When the user asks you to perform work in this repository, you MUST use the existing agent orchestration system. Do NOT perform the work directly.**
+
+### How to Handle User Requests
+
+1. **Comment on the appropriate GitHub issue/PR** with the user's request
+2. **Run the orchestration CLI** to deploy the appropriate named agent
+3. **Let the specialized agent** perform the work using its defined skills
+
+### Agent Deployment Commands
+
+```bash
+# For general tasks - let orchestrator route to the right specialist
+agents run "task description"
+agents run --issue <number>
+
+# For issue/PR monitoring - deploy long-running agent
+agents deploy --issue <number> --watch
+agents deploy --pr <number> --watch
+
+# For syncing comments - process all unresolved comments
+agents sync                    # All open issues/PRs
+agents sync --issue <number>   # Specific issue
+agents sync --pr <number>      # Specific PR
+```
+
+### Named Agent Types (see README for full details)
+
+**Coordination:**
+- `orchestrator` - Routes tasks to specialists, decomposes multi-step work
+- `project-manager` - Coordinates tasks, estimates costs, runs sync
+- `reviewer` - PR evaluation against rubrics
+- `judge` - Output quality evaluation via LLM-as-judge
+
+**Design & Architecture:**
+- `designer` - UI/UX design, wireframes, design specs
+- `architect` - System architecture, API specs, tech selection
+
+**Engineering Specialists:**
+- `backend-engineer` - Databases, APIs, data pipelines
+- `frontend-engineer` - React/Vue/Svelte, responsive UIs
+- `ml-engineer` - Model training, prompt engineering
+- `infrastructure-engineer` - CI/CD, containers, monitoring
+- `integration-engineer` - E2E tests, cross-cutting concerns
+- `performance-engineer` - TDD (tests first), profiling, benchmarks
+
+### Agent Skills (see `.claude/skills/` for details)
+
+- `create-issue` - Standardized GitHub issue creation
+- `implement-feature` - TDD green phase (make tests pass)
+- `write-tests` - TDD red phase + performance analysis
+- `route-task` - Task classification and routing logic
+- `evaluate` - LLM-as-judge evaluation
+- `review-pr` - Pull request review process
+
+### Routing Examples
+
+When user asks for work, route through the orchestration system:
+
+- **"Add a new feature"** → Comment on issue → `agents run --issue <number>` → Orchestrator routes to Architect → Performance Engineer (tests) → Appropriate specialist
+- **"Fix a bug"** → Comment on issue → `agents run --issue <number>` → Performance Engineer (regression test) → Orchestrator routes to specialist
+- **"Review this PR"** → Comment on PR → `agents sync --pr <number>` → Reviewer evaluates against rubrics
+- **"Design a UI"** → Comment on issue → `agents run --issue <number>` → Designer creates wireframes
+- **"Set up CI/CD"** → Comment on issue → `agents run --issue <number>` → Architect → Infrastructure Engineer
+
+### What NOT to Do
+
+❌ **Do NOT directly implement code** when asked to perform work in this repository
+❌ **Do NOT bypass the agent system** for software development tasks
+❌ **Do NOT use your own Task tool** when specialized agents with skills are available
+❌ **Do NOT perform multi-step work** without going through the orchestrator
+
+### What TO Do
+
+✅ **Comment on the relevant GitHub issue/PR** with the user's request
+✅ **Use the CLI commands** (`agents run`, `agents sync`, `agents deploy`) to invoke specialized agents
+✅ **Let the named agents** use their defined skills to perform the work
+✅ **Monitor the output** and report results to the user
+
+### Example Workflow
+
+User: "Add input validation to the API"
+
+**Correct approach:**
+1. Identify or create issue for this work
+2. Comment on issue: "@orchestrator: Add input validation to the API endpoints as described in acceptance criteria"
+3. Run: `agents sync --issue <number>` or `agents run --issue <number>`
+4. Orchestrator routes: Architect → Performance Engineer → Backend Engineer → Reviewer
+5. Report results to user
+
+**Incorrect approach:**
+❌ Directly reading code files and implementing validation yourself
+❌ Using your Task tool to spawn a generic agent
+❌ Bypassing the specialized agent system
+
 ## Project Overview
 
-Multi-agent orchestration meta-repository. Coordinates AI agents (orchestrator, engineer, test-writer, reviewer, judge) to develop software with built-in evaluation.
+Multi-agent orchestration meta-repository. Coordinates 12 specialized AI agents (orchestrator, architect, 6 engineering specialists, designer, reviewer, judge, project manager) to develop software with built-in evaluation.
 
-**Primary interaction model:** Comment on GitHub issues and PRs, then run `eco sync`. Agents parse comments, act in parallel (edit issue bodies, push PR code, update descriptions), and resolve comment threads when done.
+**Primary interaction model:** Comment on GitHub issues and PRs, then run `agents sync`. Agents parse comments, act in parallel (edit issue bodies, push PR code, update descriptions), and resolve comment threads when done.
+
+**IMPORTANT FOR CLAUDE CODE SESSIONS:** When working in this repository, always use the existing CLI (`agents run`, `agents sync`, `agents deploy`) to orchestrate and deploy the named agent types with their defined skills. Do NOT perform software development work directly—route it through the specialized agent system as outlined in the README and "Working in This Repository" section below.
 
 Arcade/MCP authorization handles OAuth-based write permissions for GitHub tools via the Arcade API.
+
+## Model Selection
+
+**IMPORTANT: Always use standard models (Opus/Sonnet) by default. Do NOT use economy mode unless explicitly requested.**
+
+- **Standard mode** (default): `agents <command>` — Uses Opus/Sonnet models as defined in `config.py`
+- **Economy mode**: `eco <command>` or `agents --economy <command>` — Uses Haiku/cheaper models for cost efficiency
+- **Model configuration**: See `orchestration/config.py` for `MODEL_TABLE` (standard) and `ECONOMY_MODEL_TABLE` (economy)
+
+When spawning agents or running commands, use standard models unless the user explicitly requests economy mode.
 
 ## Commands
 
 ```bash
 # Primary workflow: sync comments on issues/PRs
-eco sync                     # Process all unresolved comments
-eco sync --issue 42          # Just this issue
-eco sync --pr 18             # Just this PR
-eco sync --dry-run           # Show plan without executing
+agents sync                     # Process all unresolved comments
+agents sync --issue 42          # Just this issue
+agents sync --pr 18             # Just this PR
+agents sync --dry-run           # Show plan without executing
 
 # Run a task through the orchestration pipeline
-eco run "Add input validation"
-eco run --issue 42
+agents run "Add input validation"
+agents run --issue 42
 
 # Deploy an agent on an issue/PR (long-running)
-eco deploy --issue 42 --watch
+agents deploy --issue 42 --watch
 
 # Token cost estimation
-eco cost --pr 18
+agents cost --pr 18
 
 # Show running agents and token usage
-eco status
+agents status
 
 # Install dependencies
 uv sync
@@ -73,7 +181,7 @@ uv sync
 # Run tests
 uv run pytest                           # Unit tests
 uv run pytest -m integration            # Integration tests
-eco test --integration                  # Same, via eco
+agents test --integration               # Same, via agents CLI
 
 # Run linter
 uv run ruff check .
@@ -91,7 +199,7 @@ Deterministic scaffolding around probabilistic models:
 
 ```
 User comments on issue/PR
-    → eco sync (fetches unresolved comments via gh CLI)
+    → agents sync (fetches unresolved comments via gh CLI)
     → Classify intent per comment (pattern match first, LLM fallback)
     → Parallel execution:
         ├─ gh issue edit (update issue body)
@@ -102,8 +210,8 @@ User comments on issue/PR
     → Post summary
 
 Execution modes:
-    Local:  eco sync / eco run / eco deploy
-    Remote: eco remote run (GCP, auto-shutdown)
+    Local:  agents sync / agents run / agents deploy
+    Remote: agents remote run (GCP, auto-shutdown)
     CI:     GitHub Actions (@claude mentions)
 ```
 
@@ -129,4 +237,8 @@ Required in `.env`:
 
 Also configured:
 - `GITHUB_REPO`, `GITHUB_TOKEN` — GitHub integration
-- `ORCHESTRATOR_AGENT_MODEL`, `GITHUB_AGENT_MODEL`, `CODING_AGENT_MODEL` — Model selection
+- `ORCHESTRATOR_AGENT_MODEL`, `GITHUB_AGENT_MODEL`, `CODING_AGENT_MODEL` — Model selection for agent types
+  - Use `sonnet` for most agents (orchestrator, github agents)
+  - Use `opus` for coding agents and when under-specified
+  - **Never use economy mode (`eco` command) unless explicitly requested**
+  - Maps to full model IDs in `orchestration/config.py:MODEL_TABLE` (standard) and `ECONOMY_MODEL_TABLE` (economy)
