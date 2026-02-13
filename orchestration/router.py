@@ -124,7 +124,9 @@ CLASSIFICATION_PATTERNS: list[tuple[TaskType, re.Pattern]] = [
     (TaskType.ARCHITECTURE, re.compile(r"\bproject\s+foundation\b", re.IGNORECASE)),
     (TaskType.DOCS, re.compile(r"\bwrite.*documentation\b", re.IGNORECASE)),
     (TaskType.DOCS, re.compile(r"\bcreate.*documentation\b", re.IGNORECASE)),
+    (TaskType.DOCS, re.compile(r"\bupdate.*documentation\b", re.IGNORECASE)),
     (TaskType.DOCS, re.compile(r"\barchitectural\s+documentation\b", re.IGNORECASE)),
+    (TaskType.DOCS, re.compile(r"\bdocumentation\b", re.IGNORECASE)),
     # Unity Space Sim project-specific patterns (most specific, checked after architecture/docs)
     # Asset design patterns (most specific - must come before general Unity/Blender)
     (TaskType.UNITY_ASSET_DESIGN, re.compile(r"\bship\s+design\b", re.IGNORECASE)),
