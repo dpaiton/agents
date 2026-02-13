@@ -526,11 +526,11 @@ class ActionExecutor:
                 comment_id=comment.id,
                 intent=CommentIntent.INVOKE_AGENT,
                 success=True,
-                summary=f"[dry-run] Would invoke @{agent_name} on {target}",
+                summary=f"[dry-run] Would invoke @{agent_name} on {target}: {command[:50]}...",
             )
 
         # Post a confirmation comment to the issue/PR
-        confirmation = f"Invoking @{agent_name} via orchestration system..."
+        confirmation = f"Invoking @{agent_name} via orchestration system...\n\nCommand: {command}"
         if comment.pr:
             rc, _, err = _run_gh("pr", "comment", str(comment.pr), "--body", confirmation)
         else:
