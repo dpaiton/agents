@@ -267,11 +267,10 @@ class ExecutionEngine:
     # --- internal helpers ---------------------------------------------------
 
     def _run_agent(self, agent: str, run: TaskRun) -> dict:
-        """Run a single agent step via the Anthropic API.
+        """Run a single agent step.
 
-        Loads the agent definition from ``.claude/agents/{agent}.md``,
-        selects a model based on agent role, and calls the Anthropic
-        Messages API.  Token usage is extracted from the API response.
+        Tries the Anthropic SDK first (requires ``ANTHROPIC_API_KEY``).
+        Falls back to the ``claude`` CLI which handles OAuth natively.
 
         Args:
             agent: The agent name (e.g. "architect", "reviewer").
@@ -281,16 +280,6 @@ class ExecutionEngine:
             A dict with keys: agent, input_tokens, output_tokens,
             output (str), and optionally error (str).
         """
-        try:
-            import anthropic
-        except ImportError:
-            return {
-                "agent": agent,
-                "input_tokens": 0,
-                "output_tokens": 0,
-                "error": "anthropic SDK not installed — run: uv sync --group dev",
-            }
-
         # Resolve the agent definition file (project-aware)
         system_prompt = _load_agent_definition(agent, run)
 
@@ -308,14 +297,26 @@ class ExecutionEngine:
         parts.append(f"Agent sequence: {' → '.join(run.agent_sequence)}")
         user_message = "\n\n".join(parts)
 
-        # Call the Anthropic API
+        # Try Anthropic SDK first (if API key is available)
         api_key = os.environ.get("ANTHROPIC_API_KEY")
-        if not api_key:
+        if api_key:
+            return self._run_agent_sdk(agent, model, system_prompt, user_message, api_key)
+
+        # Fall back to claude CLI
+        return self._run_agent_cli(agent, model, system_prompt, user_message)
+
+    def _run_agent_sdk(
+        self, agent: str, model: str, system_prompt: str, user_message: str, api_key: str,
+    ) -> dict:
+        """Run an agent step via the Anthropic Python SDK."""
+        try:
+            import anthropic
+        except ImportError:
             return {
                 "agent": agent,
                 "input_tokens": 0,
                 "output_tokens": 0,
-                "error": "ANTHROPIC_API_KEY not set",
+                "error": "anthropic SDK not installed — run: uv sync --group dev",
             }
 
         try:
@@ -333,7 +334,7 @@ class ExecutionEngine:
                     output_text += block.text
 
             logger.info(
-                "Agent %s completed: %d input, %d output tokens",
+                "Agent %s completed (SDK): %d input, %d output tokens",
                 agent,
                 response.usage.input_tokens,
                 response.usage.output_tokens,
@@ -343,6 +344,33 @@ class ExecutionEngine:
                 "agent": agent,
                 "input_tokens": response.usage.input_tokens,
                 "output_tokens": response.usage.output_tokens,
+                "output": output_text,
+            }
+        except Exception as exc:
+            return {
+                "agent": agent,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "error": f"Agent {agent} failed: {exc}",
+            }
+
+    def _run_agent_cli(
+        self, agent: str, model: str, system_prompt: str, user_message: str,
+    ) -> dict:
+        """Run an agent step via the ``claude`` CLI."""
+        from orchestration.backends import _run_claude_cli
+
+        try:
+            output_text = _run_claude_cli(
+                user_message, model=model, system_prompt=system_prompt,
+            )
+
+            logger.info("Agent %s completed (CLI)", agent)
+
+            return {
+                "agent": agent,
+                "input_tokens": 0,
+                "output_tokens": 0,
                 "output": output_text,
             }
         except Exception as exc:

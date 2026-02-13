@@ -21,9 +21,11 @@ from orchestration.backends import (
     DEFAULT_MODELS,
     ECONOMY_MODELS,
     AnthropicBackend,
+    ClaudeCliBackend,
     GoogleBackend,
     ModelBackend,
     OpenAIBackend,
+    _run_claude_cli,
     available_backends,
     backend_as_judge_fn,
     create_backend,
@@ -185,17 +187,25 @@ class TestAvailableBackends:
         result = available_backends()
         assert result == ["anthropic"]
 
+    @patch("shutil.which", return_value=None)
     @patch.dict("os.environ", {}, clear=True)
-    def test_empty_when_no_keys_set(self):
+    def test_empty_when_no_keys_and_no_cli(self, _mock_which):
         result = available_backends()
         assert result == []
 
+    @patch("shutil.which", return_value="/usr/bin/claude")
+    @patch.dict("os.environ", {}, clear=True)
+    def test_anthropic_available_via_claude_cli(self, _mock_which):
+        result = available_backends()
+        assert "anthropic" in result
+
+    @patch("shutil.which", return_value=None)
     @patch.dict(
         "os.environ",
         {"GOOGLE_API_KEY": "k2", "OPENAI_API_KEY": "k3"},
         clear=True,
     )
-    def test_excludes_provider_without_key(self):
+    def test_excludes_provider_without_key_or_cli(self, _mock_which):
         result = available_backends()
         assert "anthropic" not in result
         assert "google" in result
@@ -456,3 +466,131 @@ class TestOpenAIBackend:
     def test_raises_without_api_key(self):
         with pytest.raises(ValueError, match="OPENAI_API_KEY"):
             OpenAIBackend()
+
+
+# ---------------------------------------------------------------------------
+# TestClaudeCliBackend
+# ---------------------------------------------------------------------------
+
+
+class TestClaudeCliBackend:
+    """Tests for ClaudeCliBackend with mocked subprocess."""
+
+    @patch("shutil.which", return_value="/usr/bin/claude")
+    def test_init_succeeds_when_claude_in_path(self, _mock_which):
+        backend = ClaudeCliBackend()
+        assert backend.model == DEFAULT_MODELS["anthropic"]
+
+    @patch("shutil.which", return_value=None)
+    def test_init_raises_when_claude_not_in_path(self, _mock_which):
+        with pytest.raises(ValueError, match="claude CLI not found"):
+            ClaudeCliBackend()
+
+    @patch("shutil.which", return_value="/usr/bin/claude")
+    def test_uses_custom_model(self, _mock_which):
+        backend = ClaudeCliBackend(model="claude-custom")
+        assert backend.model == "claude-custom"
+
+    @patch("shutil.which", return_value="/usr/bin/claude")
+    @patch("orchestration.backends.subprocess.run")
+    def test_complete_calls_claude_cli(self, mock_run, _mock_which):
+        mock_run.return_value = MagicMock(
+            returncode=0,
+            stdout='{"result": "cli response"}',
+            stderr="",
+        )
+        backend = ClaudeCliBackend()
+        result = backend.complete("test prompt")
+
+        assert result == "cli response"
+        mock_run.assert_called_once()
+        cmd = mock_run.call_args[0][0]
+        assert cmd[0] == "claude"
+        assert "-p" in cmd
+        assert "test prompt" in cmd
+
+    @patch("shutil.which", return_value="/usr/bin/claude")
+    @patch("orchestration.backends.subprocess.run")
+    def test_complete_raises_on_cli_failure(self, mock_run, _mock_which):
+        mock_run.return_value = MagicMock(
+            returncode=1,
+            stdout="",
+            stderr="error occurred",
+        )
+        backend = ClaudeCliBackend()
+        with pytest.raises(RuntimeError, match="claude CLI failed"):
+            backend.complete("test prompt")
+
+
+# ---------------------------------------------------------------------------
+# TestRunClaudeCli
+# ---------------------------------------------------------------------------
+
+
+class TestRunClaudeCli:
+    """Tests for the _run_claude_cli helper."""
+
+    @patch("orchestration.backends.subprocess.run")
+    def test_passes_model_flag(self, mock_run):
+        mock_run.return_value = MagicMock(
+            returncode=0, stdout='{"result": "ok"}', stderr="",
+        )
+        _run_claude_cli("prompt", model="sonnet")
+        cmd = mock_run.call_args[0][0]
+        assert "--model" in cmd
+        idx = cmd.index("--model")
+        assert cmd[idx + 1] == "sonnet"
+
+    @patch("orchestration.backends.subprocess.run")
+    def test_passes_system_prompt_flag(self, mock_run):
+        mock_run.return_value = MagicMock(
+            returncode=0, stdout='{"result": "ok"}', stderr="",
+        )
+        _run_claude_cli("prompt", system_prompt="You are helpful.")
+        cmd = mock_run.call_args[0][0]
+        assert "--system-prompt" in cmd
+        idx = cmd.index("--system-prompt")
+        assert cmd[idx + 1] == "You are helpful."
+
+    @patch("orchestration.backends.subprocess.run")
+    def test_unsets_claudecode_env(self, mock_run):
+        mock_run.return_value = MagicMock(
+            returncode=0, stdout='{"result": "ok"}', stderr="",
+        )
+        _run_claude_cli("prompt")
+        env = mock_run.call_args[1]["env"]
+        assert env["CLAUDECODE"] == ""
+
+    @patch("orchestration.backends.subprocess.run")
+    def test_handles_non_json_output(self, mock_run):
+        mock_run.return_value = MagicMock(
+            returncode=0, stdout="plain text response", stderr="",
+        )
+        result = _run_claude_cli("prompt")
+        assert result == "plain text response"
+
+
+# ---------------------------------------------------------------------------
+# TestCreateBackendFallback
+# ---------------------------------------------------------------------------
+
+
+class TestCreateBackendFallback:
+    """Tests for create_backend falling back to ClaudeCliBackend."""
+
+    @patch("shutil.which", return_value="/usr/bin/claude")
+    @patch.dict("os.environ", {}, clear=True)
+    def test_anthropic_falls_back_to_cli(self, _mock_which):
+        backend = create_backend("anthropic")
+        assert isinstance(backend, ClaudeCliBackend)
+
+    @patch("shutil.which", return_value=None)
+    @patch.dict("os.environ", {}, clear=True)
+    def test_anthropic_raises_when_no_key_and_no_cli(self, _mock_which):
+        with pytest.raises(ValueError, match="claude CLI not found"):
+            create_backend("anthropic")
+
+    @patch.dict("os.environ", {}, clear=True)
+    def test_google_does_not_fall_back(self):
+        with pytest.raises(ValueError, match="GOOGLE_API_KEY"):
+            create_backend("google")

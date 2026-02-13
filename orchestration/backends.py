@@ -12,8 +12,14 @@ Design Principles:
 
 from __future__ import annotations
 
+import json
+import logging
 import os
+import shutil
+import subprocess
 from typing import Callable, Protocol, runtime_checkable
+
+logger = logging.getLogger(__name__)
 
 
 @runtime_checkable
@@ -86,6 +92,71 @@ class AnthropicBackend:
         return message.content[0].text
 
 
+class ClaudeCliBackend:
+    """Backend using the ``claude`` CLI in print mode.
+
+    Falls back to the Claude Code CLI (``claude -p``) when no Anthropic API key
+    is available.  The CLI handles OAuth authentication natively.
+    """
+
+    def __init__(self, model: str | None = None) -> None:
+        self.model = model or DEFAULT_MODELS["anthropic"]
+        if not shutil.which("claude"):
+            raise ValueError(
+                "claude CLI not found in PATH — install Claude Code"
+            )
+
+    def complete(self, prompt: str) -> str:
+        return _run_claude_cli(prompt, model=self.model)
+
+
+def _run_claude_cli(
+    prompt: str,
+    model: str | None = None,
+    system_prompt: str | None = None,
+) -> str:
+    """Run the ``claude`` CLI in print mode and return the response text.
+
+    Args:
+        prompt: The user prompt.
+        model: Model name to use.
+        system_prompt: Optional system prompt.
+
+    Returns:
+        The model's response text.
+
+    Raises:
+        RuntimeError: If the CLI invocation fails.
+    """
+    cmd = ["claude", "-p", "--output-format", "json"]
+    if model:
+        cmd.extend(["--model", model])
+    if system_prompt:
+        cmd.extend(["--system-prompt", system_prompt])
+    cmd.append(prompt)
+
+    # Allow running from within a Claude Code session
+    env = {**os.environ, "CLAUDECODE": ""}
+
+    result = subprocess.run(
+        cmd,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"claude CLI failed (exit {result.returncode}): {result.stderr}"
+        )
+
+    try:
+        data = json.loads(result.stdout)
+        return data.get("result", result.stdout)
+    except json.JSONDecodeError:
+        return result.stdout.strip()
+
+
 class GoogleBackend:
     """Backend using the Google GenAI SDK (Gemini models)."""
 
@@ -148,6 +219,10 @@ def create_backend(
 ) -> ModelBackend:
     """Create a model backend for the given provider.
 
+    For the ``"anthropic"`` provider, tries the SDK backend first (requires
+    ``ANTHROPIC_API_KEY``).  If the key is missing, falls back to the
+    ``claude`` CLI which handles OAuth authentication natively.
+
     Args:
         provider: Provider name (``"anthropic"``, ``"google"``, ``"openai"``).
         model: Override model name.  If ``None``, uses the default (or economy
@@ -170,16 +245,27 @@ def create_backend(
         model = ECONOMY_MODELS.get(provider)
 
     cls = BACKEND_REGISTRY[provider]
-    return cls(model=model)
+    try:
+        return cls(model=model)
+    except (ValueError, ImportError):
+        if provider == "anthropic":
+            logger.info("ANTHROPIC_API_KEY not set, falling back to claude CLI")
+            return ClaudeCliBackend(model=model)
+        raise
 
 
 def available_backends() -> list[str]:
-    """Return provider names that have a valid API key set in the environment."""
-    return [
-        provider
-        for provider, env_var in API_KEY_ENV.items()
-        if os.environ.get(env_var)
-    ]
+    """Return provider names that have a usable backend.
+
+    For Anthropic, this includes the ``claude`` CLI fallback.
+    """
+    available = []
+    for provider, env_var in API_KEY_ENV.items():
+        if os.environ.get(env_var):
+            available.append(provider)
+        elif provider == "anthropic" and shutil.which("claude"):
+            available.append(provider)
+    return available
 
 
 def backend_as_judge_fn(backend: ModelBackend) -> Callable[[str], str]:
