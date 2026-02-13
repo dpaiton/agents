@@ -44,8 +44,10 @@ AGENT_MODEL_KEY: dict[str, str] = {
     "project-manager": "project-management",
 }
 
-# Directory containing agent definition markdown files
-_AGENTS_DIR = Path(__file__).resolve().parent.parent / ".claude" / "agents"
+# Directories for agent definitions
+_REPO_ROOT = Path(__file__).resolve().parent.parent
+_GLOBAL_AGENTS_DIR = _REPO_ROOT / ".claude" / "agents"
+_PROJECTS_DIR = _REPO_ROOT / "projects"
 
 
 # ---------------------------------------------------------------------------
@@ -289,8 +291,8 @@ class ExecutionEngine:
                 "error": "anthropic SDK not installed — run: uv sync --group dev",
             }
 
-        # Resolve the agent definition file
-        system_prompt = _load_agent_definition(agent)
+        # Resolve the agent definition file (project-aware)
+        system_prompt = _load_agent_definition(agent, run)
 
         # Select model for this agent's role
         model_key = AGENT_MODEL_KEY.get(agent, "code-change")
@@ -506,21 +508,117 @@ class DeployEngine:
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _load_agent_definition(agent: str) -> str:
-    """Load the agent definition markdown file as a system prompt.
+def _detect_project(run: TaskRun | None) -> str | None:
+    """Detect which project this task belongs to.
 
-    Falls back to a generic prompt if the file is missing.
+    Detection strategy (in order):
+    1. Check for project labels on the associated GitHub issue
+    2. Detect project keywords in the task description
+    3. Scan available project directories and match against task
 
     Args:
-        agent: Agent name (e.g. "architect").
+        run: The TaskRun with context (task, issue, pr).
+
+    Returns:
+        Project name (e.g. "unity-space-sim") or None if not detected.
+    """
+    if not run:
+        return None
+
+    # Strategy 1: Check GitHub issue labels
+    if run.issue:
+        try:
+            import subprocess
+            result = subprocess.run(
+                ["gh", "issue", "view", str(run.issue), "--json", "labels", "--jq", ".labels[].name"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            if result.returncode == 0:
+                labels = result.stdout.strip().split("\n")
+                # Check if any label matches a project directory
+                if _PROJECTS_DIR.exists():
+                    for project_dir in _PROJECTS_DIR.iterdir():
+                        if project_dir.is_dir() and project_dir.name in labels:
+                            logger.info("Detected project from issue label: %s", project_dir.name)
+                            return project_dir.name
+        except (subprocess.TimeoutExpired, FileNotFoundError, Exception) as e:
+            logger.debug("Could not fetch issue labels: %s", e)
+
+    # Strategy 2: Check for project keywords in task description
+    task_lower = run.task.lower()
+    if _PROJECTS_DIR.exists():
+        for project_dir in _PROJECTS_DIR.iterdir():
+            if project_dir.is_dir():
+                # Match against project name (with underscores or hyphens)
+                project_name = project_dir.name
+                keywords = [
+                    project_name,
+                    project_name.replace("-", " "),
+                    project_name.replace("_", " "),
+                ]
+                if any(keyword.lower() in task_lower for keyword in keywords):
+                    logger.info("Detected project from task keywords: %s", project_name)
+                    return project_name
+
+    return None
+
+
+def _find_agent_file(agent: str, project: str | None = None) -> Path | None:
+    """Find the agent definition file, checking project-specific directories first.
+
+    Search order:
+    1. projects/{project}/.claude/agents/{agent}.md (if project specified)
+    2. .claude/agents/{agent}.md (global fallback)
+
+    Args:
+        agent: Agent name (e.g. "architect", "unity-asset-designer").
+        project: Optional project name (e.g. "unity-space-sim").
+
+    Returns:
+        Path to the agent definition file, or None if not found.
+    """
+    # Check project-specific agent first
+    if project:
+        project_agent_file = _PROJECTS_DIR / project / ".claude" / "agents" / f"{agent}.md"
+        if project_agent_file.is_file():
+            logger.info("Using project-specific agent: %s", project_agent_file)
+            return project_agent_file
+
+    # Fall back to global agent
+    global_agent_file = _GLOBAL_AGENTS_DIR / f"{agent}.md"
+    if global_agent_file.is_file():
+        logger.info("Using global agent: %s", global_agent_file)
+        return global_agent_file
+
+    return None
+
+
+def _load_agent_definition(agent: str, run: TaskRun | None = None) -> str:
+    """Load the agent definition markdown file as a system prompt.
+
+    Checks project-specific directories first, then falls back to global.
+
+    Args:
+        agent: Agent name (e.g. "architect", "unity-asset-designer").
+        run: Optional TaskRun for project detection context.
 
     Returns:
         The system prompt string.
     """
-    agent_file = _AGENTS_DIR / f"{agent}.md"
-    if agent_file.is_file():
+    project = _detect_project(run)
+    agent_file = _find_agent_file(agent, project)
+
+    if agent_file:
         return agent_file.read_text()
-    logger.warning("Agent definition not found: %s", agent_file)
+
+    # Fall back to generic prompt
+    logger.warning(
+        "Agent definition not found for %s (project: %s). Using generic prompt.",
+        agent,
+        project or "none",
+    )
     return f"You are a {agent} agent. Complete the assigned task thoroughly."
 
 
