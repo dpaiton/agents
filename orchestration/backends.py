@@ -53,7 +53,7 @@ DEFAULT_MODELS: dict[str, str] = {
 # ---------------------------------------------------------------------------
 
 API_KEY_ENV: dict[str, str] = {
-    "anthropic": "ANTHROPIC_OAUTH_TOKEN",
+    "anthropic": "ANTHROPIC_API_KEY",
     "google": "GOOGLE_API_KEY",
     "openai": "OPENAI_API_KEY",
 }
