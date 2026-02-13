@@ -208,8 +208,8 @@ All 12 agent role definitions with personalities, constraints, and tools:
 - **Python 3.12+** (project uses 3.13 via `.python-version`)
 - **[uv](https://docs.astral.sh/uv/)** - Fast Python package manager
 - **[gh CLI](https://cli.github.com/)** - GitHub command-line tool (`gh auth login`)
-- **API Keys:**
-  - Anthropic API key (required) - Claude models
+- **Authentication:**
+  - Anthropic OAuth token (required) - Claude models (run `agents login`)
   - Arcade API key (required) - OAuth for GitHub tools
   - Google/OpenAI API keys (optional) - Alternative model backends
 
@@ -233,7 +233,7 @@ Edit `.env` and fill in required values:
 
 | Variable | Description | Required |
 |----------|-------------|----------|
-| `ANTHROPIC_API_KEY` | Claude API access | ✓ |
+| `ANTHROPIC_OAUTH_TOKEN` | Claude API access (obtained via `agents login`) | ✓ |
 | `ARCADE_API_KEY` | OAuth tool authorization | ✓ |
 | `ARCADE_USER_ID` | Agent identity (default: `agent@local`) | |
 | `GITHUB_REPO` | Target repository (e.g., `dpaiton/agents`) | ✓ |

@@ -309,13 +309,13 @@ class ExecutionEngine:
         user_message = "\n\n".join(parts)
 
         # Call the Anthropic API
-        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        api_key = os.environ.get("ANTHROPIC_OAUTH_TOKEN")
         if not api_key:
             return {
                 "agent": agent,
                 "input_tokens": 0,
                 "output_tokens": 0,
-                "error": "ANTHROPIC_API_KEY not set",
+                "error": "ANTHROPIC_OAUTH_TOKEN not set",
             }
 
         try:
