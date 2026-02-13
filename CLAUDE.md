@@ -41,13 +41,14 @@ Goal → Code → CLI → Prompts → Agents
 
 **CRITICAL: When the user asks you to perform work in this repository, you MUST use the existing agent orchestration system. Do NOT perform the work directly.**
 
-**SETUP: Before using any `agents` commands, ensure the package is installed:**
+**SETUP: Before using any `agents` commands, ensure the package is installed and venv is activated:**
 ```bash
-uv sync                 # Install dependencies (if not already done)
-uv pip install -e .     # Install agents CLI in editable mode
+uv sync                      # Install dependencies (if not already done)
+uv pip install -e .          # Install agents CLI in editable mode
+source .venv/bin/activate    # Activate virtual environment (required)
 ```
 
-Then either activate the venv (`source .venv/bin/activate`) or use the `uv run` prefix for all commands.
+After activation, you can use `agents` commands directly without any prefix.
 
 ### How to Handle User Requests
 
@@ -170,9 +171,8 @@ When spawning agents or running commands, use standard models unless the user ex
 uv sync                         # Install dependencies
 uv pip install -e .             # Install agents CLI in editable mode
 
-# Optional: Activate virtual environment to use 'agents' directly
+# Activate virtual environment (required for all commands below)
 source .venv/bin/activate       # On macOS/Linux
-# OR use 'uv run agents' prefix for all commands (no activation needed)
 ```
 
 **Primary workflow: sync comments on issues/PRs**
@@ -197,15 +197,15 @@ agents cost --pr 18
 agents status
 
 # Run tests
-uv run pytest                           # Unit tests
-uv run pytest -m integration            # Integration tests
-uv run agents test --integration        # Same, via agents CLI
+pytest                          # Unit tests
+pytest -m integration           # Integration tests
+agents test --integration       # Same, via agents CLI
 
 # Run linter
-uv run ruff check .
+ruff check .
 
 # Run authorization for all configured services
-uv run python authorize_arcade.py
+python authorize_arcade.py
 
 # Set up GitHub branch protection rules
 ./.github/scripts/setup-branch-protection.sh
