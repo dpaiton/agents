@@ -156,6 +156,12 @@ class TestExecutionEngine:
     def test_execute_records_run(self, tmp_path):
         state_dir = tmp_path / "state"
         engine = ExecutionEngine(state_dir=state_dir)
+
+        def mock_agent(agent, run):
+            return {"agent": agent, "input_tokens": 10, "output_tokens": 10, "output": "ok"}
+
+        engine._run_agent = mock_agent  # type: ignore[assignment]
+
         run = engine.plan("Add a login page")
         engine.execute(run)
         assert (state_dir / "runs.jsonl").exists()
@@ -199,6 +205,11 @@ class TestExecutionEngine:
         state_dir = tmp_path / "state"
         engine = ExecutionEngine(state_dir=state_dir)
 
+        def mock_agent(agent, run):
+            return {"agent": agent, "input_tokens": 10, "output_tokens": 10, "output": "ok"}
+
+        engine._run_agent = mock_agent  # type: ignore[assignment]
+
         # Execute two runs: one complete, one we'll leave as running
         run1 = engine.plan("Task 1")
         engine.execute(run1)  # Completes
@@ -214,6 +225,11 @@ class TestExecutionEngine:
     def test_get_all_runs(self, tmp_path):
         state_dir = tmp_path / "state"
         engine = ExecutionEngine(state_dir=state_dir)
+
+        def mock_agent(agent, run):
+            return {"agent": agent, "input_tokens": 10, "output_tokens": 10, "output": "ok"}
+
+        engine._run_agent = mock_agent  # type: ignore[assignment]
 
         run1 = engine.plan("Task 1")
         engine.execute(run1)
