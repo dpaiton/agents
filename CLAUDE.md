@@ -41,6 +41,14 @@ Goal → Code → CLI → Prompts → Agents
 
 **CRITICAL: When the user asks you to perform work in this repository, you MUST use the existing agent orchestration system. Do NOT perform the work directly.**
 
+**SETUP: Before using any `agents` commands, ensure the package is installed:**
+```bash
+uv sync                 # Install dependencies (if not already done)
+uv pip install -e .     # Install agents CLI in editable mode
+```
+
+Then either activate the venv (`source .venv/bin/activate`) or use the `uv run` prefix for all commands.
+
 ### How to Handle User Requests
 
 1. **Comment on the appropriate GitHub issue/PR** with the user's request
@@ -155,8 +163,21 @@ When spawning agents or running commands, use standard models unless the user ex
 
 ## Commands
 
+**Installation (required before first use):**
+
 ```bash
-# Primary workflow: sync comments on issues/PRs
+# Install dependencies and the agents package
+uv sync                         # Install dependencies
+uv pip install -e .             # Install agents CLI in editable mode
+
+# Optional: Activate virtual environment to use 'agents' directly
+source .venv/bin/activate       # On macOS/Linux
+# OR use 'uv run agents' prefix for all commands (no activation needed)
+```
+
+**Primary workflow: sync comments on issues/PRs**
+
+```bash
 agents sync                     # Process all unresolved comments
 agents sync --issue 42          # Just this issue
 agents sync --pr 18             # Just this PR
@@ -175,19 +196,16 @@ agents cost --pr 18
 # Show running agents and token usage
 agents status
 
-# Install dependencies
-uv sync
-
 # Run tests
 uv run pytest                           # Unit tests
 uv run pytest -m integration            # Integration tests
-agents test --integration               # Same, via agents CLI
+uv run agents test --integration        # Same, via agents CLI
 
 # Run linter
 uv run ruff check .
 
 # Run authorization for all configured services
-python authorize_arcade.py
+uv run python authorize_arcade.py
 
 # Set up GitHub branch protection rules
 ./.github/scripts/setup-branch-protection.sh
