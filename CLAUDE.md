@@ -41,6 +41,15 @@ Goal → Code → CLI → Prompts → Agents
 
 **CRITICAL: When the user asks you to perform work in this repository, you MUST use the existing agent orchestration system. Do NOT perform the work directly.**
 
+**SETUP: Before using any `agents` commands, ensure the package is installed and venv is activated:**
+```bash
+uv sync                      # Install dependencies (if not already done)
+uv pip install -e .          # Install agents CLI in editable mode
+source .venv/bin/activate    # Activate virtual environment (required)
+```
+
+After activation, you can use `agents` commands directly without any prefix.
+
 ### How to Handle User Requests
 
 1. **Comment on the appropriate GitHub issue/PR** with the user's request
@@ -155,8 +164,20 @@ When spawning agents or running commands, use standard models unless the user ex
 
 ## Commands
 
+**Installation (required before first use):**
+
 ```bash
-# Primary workflow: sync comments on issues/PRs
+# Install dependencies and the agents package
+uv sync                         # Install dependencies
+uv pip install -e .             # Install agents CLI in editable mode
+
+# Activate virtual environment (required for all commands below)
+source .venv/bin/activate       # On macOS/Linux
+```
+
+**Primary workflow: sync comments on issues/PRs**
+
+```bash
 agents sync                     # Process all unresolved comments
 agents sync --issue 42          # Just this issue
 agents sync --pr 18             # Just this PR
@@ -175,16 +196,13 @@ agents cost --pr 18
 # Show running agents and token usage
 agents status
 
-# Install dependencies
-uv sync
-
 # Run tests
-uv run pytest                           # Unit tests
-uv run pytest -m integration            # Integration tests
-agents test --integration               # Same, via agents CLI
+pytest                          # Unit tests
+pytest -m integration           # Integration tests
+agents test --integration       # Same, via agents CLI
 
 # Run linter
-uv run ruff check .
+ruff check .
 
 # Run authorization for all configured services
 python authorize_arcade.py
