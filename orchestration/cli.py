@@ -524,8 +524,46 @@ def _detect_default_branch() -> str:
     return "main"
 
 
+def _verify_environment() -> bool:
+    """Verify that the virtual environment is active and the CLI is installed.
+
+    Returns:
+        True if environment is properly configured, False otherwise.
+    """
+    # Check if we're in a virtual environment
+    in_venv = sys.prefix != sys.base_prefix
+    if not in_venv:
+        print("Error: Virtual environment is not active.")
+        print("Please activate the virtual environment:")
+        print("  source .venv/bin/activate")
+        return False
+
+    # Check if the 'agents' package is installed in editable mode
+    # We can verify this by checking if the current file is being executed from the repo
+    try:
+        import orchestration
+        orchestration_path = os.path.dirname(os.path.abspath(orchestration.__file__))
+        repo_orchestration_path = os.path.join(os.getcwd(), "orchestration")
+
+        # If the paths don't match, the package might not be installed in editable mode
+        if not os.path.samefile(orchestration_path, repo_orchestration_path):
+            print("Warning: 'agents' package may not be installed in editable mode.")
+            print("Please run: uv pip install -e .")
+            # This is a warning, not an error, so we'll continue
+    except (ImportError, FileNotFoundError, OSError):
+        # If we can't verify, just warn and continue
+        print("Warning: Could not verify 'agents' package installation.")
+        print("If you encounter issues, please run: uv pip install -e .")
+
+    return True
+
+
 def cmd_sync_comments(args: argparse.Namespace) -> int:
     """Process unresolved GitHub comments on issues and PRs."""
+    # Verify environment is properly set up
+    if not _verify_environment():
+        return 1
+
     from orchestration.sync_engine import (
         ActionExecutor,
         CommentFetcher,
@@ -571,7 +609,8 @@ def cmd_sync_comments(args: argparse.Namespace) -> int:
         results.append(result)
 
         status = "OK" if result.success else "FAIL"
-        print(f"  [{status}] {result.intent}: {result.summary}")
+        error_msg = f" - {result.error}" if result.error else ""
+        print(f"  [{status}] {result.intent}: {result.summary}{error_msg}")
 
         if not dry_run:
             history.record(result)

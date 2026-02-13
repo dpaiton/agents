@@ -56,7 +56,7 @@ class TestCommentIntent:
         assert str(CommentIntent.EDIT_ISSUE) == "edit_issue"
 
     def test_all_intents_count(self):
-        assert len(CommentIntent) == 6
+        assert len(CommentIntent) == 7
 
 
 # ---------------------------------------------------------------------------
@@ -158,6 +158,16 @@ class TestIntentClassifier:
         classifier = IntentClassifier()
         result = classifier.classify(self._make_comment("@bot please respond"))
         assert result.intent == CommentIntent.REPLY
+
+    def test_invoke_agent_pattern_with_colon(self):
+        classifier = IntentClassifier()
+        result = classifier.classify(self._make_comment("@unity-asset-designer: Create concept art"))
+        assert result.intent == CommentIntent.INVOKE_AGENT
+
+    def test_invoke_agent_pattern_orchestrator(self):
+        classifier = IntentClassifier()
+        result = classifier.classify(self._make_comment("@orchestrator: Please handle this task"))
+        assert result.intent == CommentIntent.INVOKE_AGENT
 
     def test_create_issue_pattern(self):
         classifier = IntentClassifier()
@@ -420,6 +430,26 @@ class TestActionExecutor:
         result = executor.execute(classified, dry_run=True)
         assert result.success is True
         assert "[dry-run]" in result.summary
+
+    def test_invoke_agent_dry_run(self):
+        executor = ActionExecutor()
+        comment = GitHubComment(
+            id="c1",
+            body="@unity-asset-designer: Create concept art for spaceship",
+            author="user",
+            created_at="2024-01-01T00:00:00Z",
+            issue=42,
+        )
+        classified = ClassifiedComment(
+            comment=comment,
+            intent=CommentIntent.INVOKE_AGENT,
+            confidence=0.9,
+            pattern_matched=True,
+        )
+        result = executor.execute(classified, dry_run=True)
+        assert result.success is True
+        assert "[dry-run]" in result.summary
+        assert "unity-asset-designer" in result.summary
 
     def test_clarify_dry_run(self):
         executor = ActionExecutor()
