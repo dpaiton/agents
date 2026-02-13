@@ -115,7 +115,17 @@ PRIORITY_TABLE: dict[TaskType, str] = {
 # Classification patterns - ordered by specificity (most specific first)
 # Pattern matching handles known task types (P6: Code Before Prompts)
 CLASSIFICATION_PATTERNS: list[tuple[TaskType, re.Pattern]] = [
-    # Unity Space Sim project-specific patterns (most specific, checked first)
+    # Architecture and documentation patterns (MUST come first, before project-specific)
+    # These override project-specific routing when the task is clearly about architecture/docs
+    (TaskType.ARCHITECTURE, re.compile(r"\barchitecture\b", re.IGNORECASE)),
+    (TaskType.ARCHITECTURE, re.compile(r"\bsystem\s*design\b", re.IGNORECASE)),
+    (TaskType.ARCHITECTURE, re.compile(r"\bapi\s*spec\b", re.IGNORECASE)),
+    (TaskType.ARCHITECTURE, re.compile(r"\bfoundation\b.*\bdocumentation\b", re.IGNORECASE)),
+    (TaskType.ARCHITECTURE, re.compile(r"\bproject\s+foundation\b", re.IGNORECASE)),
+    (TaskType.DOCS, re.compile(r"\bwrite.*documentation\b", re.IGNORECASE)),
+    (TaskType.DOCS, re.compile(r"\bcreate.*documentation\b", re.IGNORECASE)),
+    (TaskType.DOCS, re.compile(r"\barchitectural\s+documentation\b", re.IGNORECASE)),
+    # Unity Space Sim project-specific patterns (most specific, checked after architecture/docs)
     # Asset design patterns (most specific - must come before general Unity/Blender)
     (TaskType.UNITY_ASSET_DESIGN, re.compile(r"\bship\s+design\b", re.IGNORECASE)),
     (TaskType.UNITY_ASSET_DESIGN, re.compile(r"\basset\s+design\b", re.IGNORECASE)),
@@ -148,10 +158,6 @@ CLASSIFICATION_PATTERNS: list[tuple[TaskType, re.Pattern]] = [
     (TaskType.DESIGN, re.compile(r"\bui\b", re.IGNORECASE)),
     (TaskType.DESIGN, re.compile(r"\bux\b", re.IGNORECASE)),
     (TaskType.DESIGN, re.compile(r"\bwireframe\b", re.IGNORECASE)),
-    # Architecture patterns
-    (TaskType.ARCHITECTURE, re.compile(r"\barchitecture\b", re.IGNORECASE)),
-    (TaskType.ARCHITECTURE, re.compile(r"\bsystem\s*design\b", re.IGNORECASE)),
-    (TaskType.ARCHITECTURE, re.compile(r"\bapi\s*spec\b", re.IGNORECASE)),
     # Backend patterns
     (TaskType.BACKEND, re.compile(r"\bapi\b", re.IGNORECASE)),
     (TaskType.BACKEND, re.compile(r"\bdatabase\b", re.IGNORECASE)),
@@ -190,9 +196,8 @@ CLASSIFICATION_PATTERNS: list[tuple[TaskType, re.Pattern]] = [
     (TaskType.BUG_FIX, re.compile(r"\bbroken\b", re.IGNORECASE)),
     (TaskType.BUG_FIX, re.compile(r"\berror\b", re.IGNORECASE)),
     (TaskType.BUG_FIX, re.compile(r"\bissue\b", re.IGNORECASE)),
-    # Docs patterns
+    # Docs patterns (additional fallback patterns - more specific ones are at top)
     (TaskType.DOCS, re.compile(r"\bdocs?\b", re.IGNORECASE)),
-    (TaskType.DOCS, re.compile(r"\bdocumentation\b", re.IGNORECASE)),
     (TaskType.DOCS, re.compile(r"\breadme\b", re.IGNORECASE)),
     (TaskType.DOCS, re.compile(r"\bdocstrings?\b", re.IGNORECASE)),
     # Infrastructure patterns

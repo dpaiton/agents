@@ -35,6 +35,8 @@ from dataclasses import asdict
 from datetime import datetime, timezone
 from typing import Any
 
+from dotenv import load_dotenv
+
 from orchestration.cost import (
     CostCalculator,
     DailySummary,
@@ -1724,6 +1726,9 @@ def main() -> int:
     When economy mode is active, ``args.economy`` is ``True`` and downstream
     modules should select smaller, cheaper models accordingly.
     """
+    # Load environment variables from .env file
+    load_dotenv()
+
     parser = create_parser()
     args = parser.parse_args()
 
