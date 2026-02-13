@@ -37,6 +37,7 @@ class CommentIntent(Enum):
     EDIT_ISSUE = "edit_issue"
     CHANGE_CODE = "change_code"
     UPDATE_PR_DESC = "update_pr_desc"
+    INVOKE_AGENT = "invoke_agent"
     REPLY = "reply"
     CLARIFY = "clarify"
     CREATE_ISSUE = "create_issue"
@@ -303,9 +304,12 @@ class IntentClassifier:
             re.compile(r"\b(update|edit|change|modify)\s+(the\s+)?(pr|pull\s+request)\s+(description|body|summary)\b", re.I),
             re.compile(r"\bpr\s+description\b", re.I),
         ],
+        CommentIntent.INVOKE_AGENT: [
+            re.compile(r"^\s*@[\w-]+:", re.I),  # @agent-name: command (with colon)
+        ],
         CommentIntent.REPLY: [
             re.compile(r"\b(reply|respond|answer)\b", re.I),
-            re.compile(r"^\s*@\w+", re.I),
+            re.compile(r"^\s*@\w+\s+(?!:)", re.I),  # @mention without colon (informal mentions)
             re.compile(r"\bthanks\b|\bthank\s+you\b|\blgtm\b", re.I),
         ],
         CommentIntent.CREATE_ISSUE: [
@@ -409,6 +413,7 @@ class ActionExecutor:
             CommentIntent.EDIT_ISSUE: self._edit_issue,
             CommentIntent.CHANGE_CODE: self._change_code,
             CommentIntent.UPDATE_PR_DESC: self._update_pr_desc,
+            CommentIntent.INVOKE_AGENT: self._invoke_agent,
             CommentIntent.REPLY: self._reply,
             CommentIntent.CLARIFY: self._ask_clarification,
             CommentIntent.CREATE_ISSUE: self._create_issue,
@@ -494,6 +499,57 @@ class ActionExecutor:
             success=rc == 0,
             summary=f"Updated PR #{comment.pr} description" if rc == 0 else f"Failed to update PR #{comment.pr}",
             error=err if rc != 0 else None,
+        )
+
+    def _invoke_agent(self, comment: GitHubComment, dry_run: bool) -> ActionResult:
+        """Invoke a named agent via the orchestration system."""
+        import re
+
+        target = f"PR #{comment.pr}" if comment.pr else f"issue #{comment.issue}"
+
+        # Extract agent name from comment (e.g., "@unity-asset-designer:")
+        match = re.match(r"^\s*@([\w-]+):\s*(.+)", comment.body, re.DOTALL)
+        if not match:
+            return ActionResult(
+                comment_id=comment.id,
+                intent=CommentIntent.INVOKE_AGENT,
+                success=False,
+                summary=f"Failed to parse agent mention in {target}",
+                error="Could not extract agent name from comment",
+            )
+
+        agent_name = match.group(1)
+        command = match.group(2).strip()
+
+        if dry_run:
+            return ActionResult(
+                comment_id=comment.id,
+                intent=CommentIntent.INVOKE_AGENT,
+                success=True,
+                summary=f"[dry-run] Would invoke @{agent_name} on {target}: {command[:50]}...",
+            )
+
+        # Post a confirmation comment to the issue/PR
+        confirmation = f"Invoking @{agent_name} via orchestration system...\n\nCommand: {command}"
+        if comment.pr:
+            rc, _, err = _run_gh("pr", "comment", str(comment.pr), "--body", confirmation)
+        else:
+            rc, _, err = _run_gh("issue", "comment", str(comment.issue), "--body", confirmation)
+
+        if rc != 0:
+            return ActionResult(
+                comment_id=comment.id,
+                intent=CommentIntent.INVOKE_AGENT,
+                success=False,
+                summary=f"Failed to post confirmation to {target}",
+                error=err,
+            )
+
+        return ActionResult(
+            comment_id=comment.id,
+            intent=CommentIntent.INVOKE_AGENT,
+            success=True,
+            summary=f"Agent @{agent_name} invoked on {target}",
         )
 
     def _reply(self, comment: GitHubComment, dry_run: bool) -> ActionResult:
