@@ -171,14 +171,14 @@ def _build_config(section: dict[str, Any]) -> EcoConfig:
         poll_interval=poll_interval,
         parallel=parallel,
         models=models,
-        gcp_project=os.environ.get("ECO_GCP_PROJECT", gcp.get("project")),
-        gcp_zone=os.environ.get("ECO_GCP_ZONE", gcp.get("zone", "us-central1-a")),
+        gcp_project=os.environ.get("GCP_PROJECT", gcp.get("project")),
+        gcp_zone=os.environ.get("GCP_ZONE", gcp.get("zone", "us-central1-a")),
         gcp_machine_type=os.environ.get(
-            "ECO_GCP_MACHINE_TYPE", gcp.get("machine_type", "e2-standard-2"),
+            "GCP_MACHINE_TYPE", gcp.get("machine_type", "e2-standard-2"),
         ),
         gcp_timeout_hours=int(
             os.environ.get(
-                "ECO_GCP_TIMEOUT_HOURS",
+                "GCP_TIMEOUT_HOURS",
                 gcp.get("timeout_hours", 4),
             )
         ),

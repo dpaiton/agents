@@ -228,7 +228,7 @@ class TestBuildConfig:
         config = _build_config({})
         assert config.parallel is False
 
-    @patch.dict(os.environ, {"ECO_GCP_PROJECT": "env-project"})
+    @patch.dict(os.environ, {"GCP_PROJECT": "env-project"})
     def test_env_overrides_gcp_project(self):
         config = _build_config({"gcp": {"project": "file-project"}})
         assert config.gcp_project == "env-project"
