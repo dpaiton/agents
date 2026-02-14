@@ -3,8 +3,7 @@
 
 Usage:
     python generate_concept_art.py --prompt "A small space fighter..." --output render.png
-    python generate_concept_art.py --prompt "..." --output render.png --size 1792x1024
-    python generate_concept_art.py --prompt "..." --output render.png --model dall-e-3 --quality hd
+    python generate_concept_art.py --prompt "..." --output render.png --size 1792x1024 --quality hd
 
 Requires OPENAI_API_KEY in the environment (or .env file in the repo root).
 """
@@ -23,20 +22,23 @@ def load_env():
     """Load .env file from repo root if python-dotenv is available."""
     try:
         from dotenv import load_dotenv
-        # Walk up to find .env
+        # Check common locations: cwd, script dir and parents
+        candidates = [Path.cwd()]
         d = Path(__file__).resolve().parent
-        for _ in range(5):
+        for _ in range(6):
+            candidates.append(d)
+            d = d.parent
+        for d in candidates:
             env_path = d / ".env"
             if env_path.exists():
                 load_dotenv(env_path)
                 return
-            d = d.parent
     except ImportError:
         pass
 
 
-def generate_image(prompt: str, output_path: str, size: str = "1792x1024",
-                   model: str = "dall-e-3", quality: str = "hd") -> str:
+def generate_image(prompt: str, output_path: str, size: str = "1024x1024",
+                   model: str = "dall-e-3", quality: str = "standard") -> str:
     """Call OpenAI Images API and save the result to output_path.
 
     Returns the path to the saved image.
@@ -98,13 +100,13 @@ def main():
     parser = argparse.ArgumentParser(description="Generate concept art via OpenAI DALL-E")
     parser.add_argument("--prompt", required=True, help="Image generation prompt")
     parser.add_argument("--output", required=True, help="Output file path (PNG)")
-    parser.add_argument("--size", default="1792x1024",
+    parser.add_argument("--size", default="1024x1024",
                         choices=["1024x1024", "1792x1024", "1024x1792"],
-                        help="Image size (default: 1792x1024)")
+                        help="Image size (default: 1024x1024)")
     parser.add_argument("--model", default="dall-e-3",
                         help="Model to use (default: dall-e-3)")
-    parser.add_argument("--quality", default="hd", choices=["standard", "hd"],
-                        help="Quality level (default: hd)")
+    parser.add_argument("--quality", default="standard", choices=["standard", "hd"],
+                        help="Quality level (default: standard)")
     args = parser.parse_args()
 
     load_env()

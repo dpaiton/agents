@@ -22,11 +22,12 @@ Generate concept renders by calling the CLI tool:
 ```bash
 python projects/unity-space-sim/tools/generate_concept_art.py \
   --prompt "A small space fighter ship, clean 3D render..." \
-  --output /tmp/renders/fighter_hero.png \
-  --size 1792x1024
+  --output /tmp/renders/fighter_hero.png
 ```
 
 The tool wraps the OpenAI Images API (DALL-E 3). It requires `OPENAI_API_KEY` in the environment (loaded from `.env`).
+
+**Cost defaults:** The tool defaults to the cheapest settings (1024x1024, standard quality, ~$0.04/image). A full 4-angle iteration costs ~$0.16. Only use `--size 1792x1024 --quality hd` for final approved designs that need higher fidelity (~$0.12/image).
 
 If the tool is not available or the API key is not set, fall back to a detailed text design spec and note that renders are pending setup.
 
