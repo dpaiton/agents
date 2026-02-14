@@ -19,7 +19,6 @@ Requires OPENAI_API_KEY in the environment (or .env file in the repo root).
 
 import argparse
 import base64
-import io
 import json
 import os
 import sys
