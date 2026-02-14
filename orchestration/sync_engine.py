@@ -392,11 +392,15 @@ class IntentClassifier:
 # ---------------------------------------------------------------------------
 
 
+_AGENT_RESULT_MARKER = "<!-- eco-agent-result -->"
+
+
 class ActionExecutor:
     """Executes actions for classified comments using ``gh`` CLI and ``git``."""
 
-    def __init__(self, repo: Optional[str] = None) -> None:
+    def __init__(self, repo: Optional[str] = None, engine=None) -> None:
         self.repo = repo or os.environ.get("GITHUB_REPO", "")
+        self.engine = engine
 
     def _repo_args(self) -> list[str]:
         if self.repo:
@@ -529,7 +533,58 @@ class ActionExecutor:
                 summary=f"[dry-run] Would invoke @{agent_name} on {target}: {command[:50]}...",
             )
 
-        # Post a confirmation comment to the issue/PR
+        # If an ExecutionEngine is available, run the agent through it
+        if self.engine is not None:
+            try:
+                task_run = self.engine.run_named_agent(
+                    agent_name,
+                    command,
+                    issue=comment.issue,
+                    pr=comment.pr,
+                    dry_run=False,
+                )
+            except ValueError as exc:
+                return ActionResult(
+                    comment_id=comment.id,
+                    intent=CommentIntent.INVOKE_AGENT,
+                    success=False,
+                    summary=f"Failed to invoke @{agent_name} on {target}",
+                    error=str(exc),
+                )
+
+            success = task_run.status == "complete"
+            total_tokens = (
+                task_run.token_usage["input"] + task_run.token_usage["output"]
+            )
+
+            # Post results comment
+            if success:
+                result_body = (
+                    f"{_AGENT_RESULT_MARKER}\n"
+                    f"Agent @{agent_name} completed on {target}.\n\n"
+                    f"Tokens used: {total_tokens:,}"
+                )
+            else:
+                result_body = (
+                    f"{_AGENT_RESULT_MARKER}\n"
+                    f"Agent @{agent_name} failed on {target}.\n\n"
+                    f"Error: {task_run.error or 'unknown'}"
+                )
+
+            if comment.pr:
+                _run_gh("pr", "comment", str(comment.pr), "--body", result_body)
+            elif comment.issue:
+                _run_gh("issue", "comment", str(comment.issue), "--body", result_body)
+
+            return ActionResult(
+                comment_id=comment.id,
+                intent=CommentIntent.INVOKE_AGENT,
+                success=success,
+                summary=f"Agent @{agent_name} {'completed' if success else 'failed'} on {target}",
+                error=task_run.error if not success else None,
+            )
+
+        # Fallback: no engine — post confirmation comment only
         confirmation = f"Invoking @{agent_name} via orchestration system...\n\nCommand: {command}"
         if comment.pr:
             rc, _, err = _run_gh("pr", "comment", str(comment.pr), "--body", confirmation)

@@ -23,6 +23,7 @@ from orchestration.sync_engine import (
     GitHubComment,
     IntentClassifier,
     SyncHistory,
+    _AGENT_RESULT_MARKER,
 )
 
 
@@ -598,3 +599,205 @@ class TestSyncHistory:
         # Since far future should return nothing
         runs = history.get_runs(since="2099-01-01T00:00:00Z")
         assert len(runs) == 0
+
+
+# ---------------------------------------------------------------------------
+# TestInvokeAgentWithEngine
+# ---------------------------------------------------------------------------
+
+
+class TestInvokeAgentWithEngine:
+    """Tests for _invoke_agent when an ExecutionEngine is available."""
+
+    def test_invoke_agent_with_engine(self):
+        """Engine.run_named_agent is called with correct args."""
+        from orchestration.execution import TaskRun
+
+        mock_engine = MagicMock()
+        mock_engine.run_named_agent.return_value = TaskRun(
+            run_id="abc123",
+            task="Do something",
+            task_type="invoke_agent",
+            agent_sequence=["blender-engineer"],
+            status="complete",
+            model="claude-sonnet-4-20250514",
+            started_at="2026-01-01T00:00:00Z",
+            ended_at="2026-01-01T00:01:00Z",
+            token_usage={"input": 100, "output": 50},
+            issue=42,
+        )
+
+        executor = ActionExecutor(engine=mock_engine)
+        comment = GitHubComment(
+            id="c1",
+            body="@blender-engineer: Generate thruster geometry",
+            author="user",
+            created_at="2026-01-01T00:00:00Z",
+            issue=42,
+        )
+        classified = ClassifiedComment(
+            comment=comment,
+            intent=CommentIntent.INVOKE_AGENT,
+            confidence=0.9,
+            pattern_matched=True,
+        )
+
+        with patch("orchestration.sync_engine.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            result = executor.execute(classified)
+
+        mock_engine.run_named_agent.assert_called_once_with(
+            "blender-engineer",
+            "Generate thruster geometry",
+            issue=42,
+            pr=None,
+            dry_run=False,
+        )
+        assert result.success is True
+        assert "completed" in result.summary
+
+    def test_invoke_agent_without_engine_falls_back(self):
+        """Without engine, falls back to posting confirmation comment only."""
+        executor = ActionExecutor()  # No engine
+        comment = GitHubComment(
+            id="c1",
+            body="@blender-engineer: Generate thruster geometry",
+            author="user",
+            created_at="2026-01-01T00:00:00Z",
+            issue=42,
+        )
+        classified = ClassifiedComment(
+            comment=comment,
+            intent=CommentIntent.INVOKE_AGENT,
+            confidence=0.9,
+            pattern_matched=True,
+        )
+
+        with patch("orchestration.sync_engine.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            result = executor.execute(classified)
+
+        assert result.success is True
+        assert "invoked" in result.summary
+
+    def test_invoke_agent_engine_error(self):
+        """ValueError from engine is caught and reported."""
+        mock_engine = MagicMock()
+        mock_engine.run_named_agent.side_effect = ValueError("Unknown agent: bad-agent")
+
+        executor = ActionExecutor(engine=mock_engine)
+        comment = GitHubComment(
+            id="c1",
+            body="@bad-agent: Do something",
+            author="user",
+            created_at="2026-01-01T00:00:00Z",
+            issue=42,
+        )
+        classified = ClassifiedComment(
+            comment=comment,
+            intent=CommentIntent.INVOKE_AGENT,
+            confidence=0.9,
+            pattern_matched=True,
+        )
+
+        result = executor.execute(classified)
+        assert result.success is False
+        assert "Unknown agent" in result.error
+
+    def test_invoke_agent_engine_failure_status(self):
+        """Engine run that fails posts error result."""
+        from orchestration.execution import TaskRun
+
+        mock_engine = MagicMock()
+        mock_engine.run_named_agent.return_value = TaskRun(
+            run_id="abc123",
+            task="Do something",
+            task_type="invoke_agent",
+            agent_sequence=["blender-engineer"],
+            status="failed",
+            model="claude-sonnet-4-20250514",
+            started_at="2026-01-01T00:00:00Z",
+            ended_at="2026-01-01T00:01:00Z",
+            token_usage={"input": 0, "output": 0},
+            issue=42,
+            error="Agent crashed",
+        )
+
+        executor = ActionExecutor(engine=mock_engine)
+        comment = GitHubComment(
+            id="c1",
+            body="@blender-engineer: Generate thruster geometry",
+            author="user",
+            created_at="2026-01-01T00:00:00Z",
+            issue=42,
+        )
+        classified = ClassifiedComment(
+            comment=comment,
+            intent=CommentIntent.INVOKE_AGENT,
+            confidence=0.9,
+            pattern_matched=True,
+        )
+
+        with patch("orchestration.sync_engine.subprocess.run") as mock_run:
+            mock_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
+            result = executor.execute(classified)
+
+        assert result.success is False
+        assert "failed" in result.summary
+        assert result.error == "Agent crashed"
+
+
+# ---------------------------------------------------------------------------
+# TestBotCommentFilter
+# ---------------------------------------------------------------------------
+
+
+class TestBotCommentFilter:
+    """Tests for _AGENT_RESULT_MARKER bot comment filtering."""
+
+    def test_agent_result_marker_exists(self):
+        assert _AGENT_RESULT_MARKER == "<!-- eco-agent-result -->"
+
+    def test_bot_comment_is_filtered(self):
+        """Comments starting with the marker are filtered out."""
+        comments = [
+            GitHubComment(
+                id="c1",
+                body=f"{_AGENT_RESULT_MARKER}\nAgent completed.",
+                author="bot",
+                created_at="2026-01-01T00:00:00Z",
+                issue=42,
+            ),
+            GitHubComment(
+                id="c2",
+                body="@blender-engineer: Do something",
+                author="user",
+                created_at="2026-01-01T00:00:00Z",
+                issue=42,
+            ),
+        ]
+
+        filtered = [
+            c for c in comments
+            if not c.body.strip().startswith(_AGENT_RESULT_MARKER)
+        ]
+        assert len(filtered) == 1
+        assert filtered[0].id == "c2"
+
+    def test_normal_comment_not_filtered(self):
+        """Regular comments pass through the filter."""
+        comments = [
+            GitHubComment(
+                id="c1",
+                body="Fix the bug in the function",
+                author="user",
+                created_at="2026-01-01T00:00:00Z",
+                issue=42,
+            ),
+        ]
+
+        filtered = [
+            c for c in comments
+            if not c.body.strip().startswith(_AGENT_RESULT_MARKER)
+        ]
+        assert len(filtered) == 1

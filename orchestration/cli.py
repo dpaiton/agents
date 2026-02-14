@@ -564,20 +564,26 @@ def cmd_sync_comments(args: argparse.Namespace) -> int:
     if not _verify_environment():
         return 1
 
+    from orchestration.config import load_config as _load_config
+    from orchestration.execution import ExecutionEngine
     from orchestration.sync_engine import (
         ActionExecutor,
         CommentFetcher,
         IntentClassifier,
         SyncHistory,
+        _AGENT_RESULT_MARKER,
     )
 
     dry_run = getattr(args, "dry_run", False)
     pr_num = getattr(args, "pr", None)
     issue_num = getattr(args, "issue", None)
+    economy = getattr(args, "economy", False)
 
+    config = _load_config()
+    engine = ExecutionEngine(config=config, economy=economy)
     fetcher = CommentFetcher()
     classifier = IntentClassifier()
-    executor = ActionExecutor()
+    executor = ActionExecutor(engine=engine)
     history = SyncHistory()
 
     # Fetch comments
@@ -593,8 +599,12 @@ def cmd_sync_comments(args: argparse.Namespace) -> int:
         print("No unresolved comments found.")
         return 0
 
-    # Filter already-processed comments
-    new_comments = [c for c in comments if not history.is_processed(c.id)]
+    # Filter already-processed comments and bot-generated results
+    new_comments = [
+        c for c in comments
+        if not history.is_processed(c.id)
+        and not c.body.strip().startswith(_AGENT_RESULT_MARKER)
+    ]
     if not new_comments:
         print("All comments already processed.")
         return 0
