@@ -297,6 +297,57 @@ class ExecutionEngine:
 
         return run
 
+    def run_named_agent(
+        self,
+        agent_name: str,
+        task: str,
+        issue: int | None = None,
+        pr: int | None = None,
+        dry_run: bool = False,
+    ) -> TaskRun:
+        """Invoke a specific named agent, bypassing TaskRouter.
+
+        Constructs a single-agent TaskRun and delegates to ``execute()``
+        for the full lifecycle (token tracking, budget, JSONL persistence).
+
+        Args:
+            agent_name: The agent to invoke (e.g. "blender-engineer").
+            task: The task/command for the agent.
+            issue: Associated GitHub issue number.
+            pr: Associated GitHub PR number.
+            dry_run: If True, show plan without executing.
+
+        Returns:
+            The completed TaskRun.
+
+        Raises:
+            ValueError: If the agent name is not recognized.
+        """
+        if agent_name not in AGENT_MODEL_KEY:
+            raise ValueError(
+                f"Unknown agent: {agent_name}. "
+                f"Known agents: {', '.join(sorted(AGENT_MODEL_KEY))}"
+            )
+
+        model_key = AGENT_MODEL_KEY.get(agent_name, "code-change")
+        model = select_model(
+            model_key, config=self.config, economy=self.economy,
+        )
+
+        run = TaskRun(
+            run_id=uuid.uuid4().hex[:12],
+            task=task,
+            task_type="invoke_agent",
+            agent_sequence=[agent_name],
+            status="pending",
+            model=model,
+            started_at=_now_iso(),
+            issue=issue,
+            pr=pr,
+        )
+
+        return self.execute(run, dry_run=dry_run)
+
     def get_active_runs(self) -> list[TaskRun]:
         """List all runs with status 'running'."""
         return [r for r in self._read_all_runs() if r.status == "running"]
@@ -591,11 +642,13 @@ class DeployEngine:
             CommentFetcher,
             IntentClassifier,
             SyncHistory,
+            _AGENT_RESULT_MARKER,
         )
 
+        engine = ExecutionEngine(config=self.config, economy=self.economy)
         fetcher = CommentFetcher()
         classifier = IntentClassifier()
-        executor = ActionExecutor()
+        executor = ActionExecutor(engine=engine)
         history = SyncHistory()
 
         if pr:
@@ -606,7 +659,11 @@ class DeployEngine:
         else:
             return {"error": "Must specify --issue or --pr", "actions": []}
 
-        new_comments = [c for c in comments if not history.is_processed(c.id)]
+        new_comments = [
+            c for c in comments
+            if not history.is_processed(c.id)
+            and not c.body.strip().startswith(_AGENT_RESULT_MARKER)
+        ]
         results = []
         for comment in new_comments:
             classified = classifier.classify(comment)

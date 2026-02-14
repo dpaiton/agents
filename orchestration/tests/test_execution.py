@@ -564,6 +564,81 @@ class TestExecutionEngine:
 # ---------------------------------------------------------------------------
 
 
+class TestRunNamedAgent:
+    """Tests for ExecutionEngine.run_named_agent()."""
+
+    def test_creates_correct_task_run(self, tmp_path):
+        """run_named_agent creates a TaskRun with agent_sequence and task_type."""
+        engine = ExecutionEngine(state_dir=tmp_path / "state")
+
+        def mock_agent(agent, run):
+            return {"agent": agent, "input_tokens": 10, "output_tokens": 5, "output": "ok"}
+
+        engine._run_agent = mock_agent  # type: ignore[assignment]
+
+        result = engine.run_named_agent(
+            "blender-engineer",
+            "Generate thruster geometry",
+            issue=42,
+        )
+        assert result.task_type == "invoke_agent"
+        assert result.agent_sequence == ["blender-engineer"]
+        assert result.task == "Generate thruster geometry"
+        assert result.issue == 42
+        assert result.status == "complete"
+
+    def test_delegates_to_execute(self, tmp_path):
+        """run_named_agent delegates to _run_agent for actual execution."""
+        engine = ExecutionEngine(state_dir=tmp_path / "state")
+
+        agents_called = []
+
+        def mock_agent(agent, run):
+            agents_called.append(agent)
+            return {"agent": agent, "input_tokens": 10, "output_tokens": 5, "output": "ok"}
+
+        engine._run_agent = mock_agent  # type: ignore[assignment]
+
+        engine.run_named_agent("architect", "Design the API", pr=18)
+        assert agents_called == ["architect"]
+
+    def test_unknown_agent_raises(self, tmp_path):
+        """run_named_agent raises ValueError for unknown agents."""
+        import pytest
+
+        engine = ExecutionEngine(state_dir=tmp_path / "state")
+        with pytest.raises(ValueError, match="Unknown agent"):
+            engine.run_named_agent("nonexistent-agent", "Do something")
+
+    def test_dry_run(self, tmp_path):
+        """run_named_agent in dry-run mode does not invoke agents."""
+        engine = ExecutionEngine(state_dir=tmp_path / "state")
+
+        def mock_agent(agent, run):
+            raise AssertionError("Should not be called in dry run")
+
+        engine._run_agent = mock_agent  # type: ignore[assignment]
+
+        result = engine.run_named_agent(
+            "reviewer", "Review the changes", dry_run=True,
+        )
+        assert result.status == "complete"
+        assert result.dry_run is True
+
+    def test_records_to_jsonl(self, tmp_path):
+        """run_named_agent persists the run to JSONL."""
+        state_dir = tmp_path / "state"
+        engine = ExecutionEngine(state_dir=state_dir)
+
+        def mock_agent(agent, run):
+            return {"agent": agent, "input_tokens": 10, "output_tokens": 5, "output": "ok"}
+
+        engine._run_agent = mock_agent  # type: ignore[assignment]
+
+        engine.run_named_agent("designer", "Create wireframes")
+        assert (state_dir / "runs.jsonl").exists()
+
+
 class TestDeployEngine:
     def test_deploy_once_requires_issue_or_pr(self):
         deploy = DeployEngine()
