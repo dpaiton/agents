@@ -107,54 +107,88 @@ class ClaudeCliBackend:
             )
 
     def complete(self, prompt: str) -> str:
-        return _run_claude_cli(prompt, model=self.model)
+        result = _run_claude_cli(prompt, model=self.model)
+        return result["result"]
 
 
 def _run_claude_cli(
     prompt: str,
     model: str | None = None,
     system_prompt: str | None = None,
-) -> str:
-    """Run the ``claude`` CLI in print mode and return the response text.
+    allowed_tools: list[str] | None = None,
+    on_event: Callable[[dict], None] | None = None,
+) -> dict:
+    """Run the ``claude`` CLI in print mode with streaming NDJSON output.
 
     Args:
         prompt: The user prompt.
         model: Model name to use.
         system_prompt: Optional system prompt.
+        allowed_tools: List of tool names to allow (e.g. ``["Bash", "Write"]``).
+        on_event: Optional callback invoked for each NDJSON event line.
 
     Returns:
-        The model's response text.
+        A dict with keys ``result`` (str), ``input_tokens`` (int),
+        ``output_tokens`` (int).
 
     Raises:
         RuntimeError: If the CLI invocation fails.
     """
-    cmd = ["claude", "-p", "--output-format", "json"]
+    cmd = ["claude", "-p", "--output-format", "stream-json"]
     if model:
         cmd.extend(["--model", model])
     if system_prompt:
         cmd.extend(["--system-prompt", system_prompt])
+    if allowed_tools:
+        cmd.extend(["--allowedTools", ",".join(allowed_tools)])
     cmd.append(prompt)
 
     # Allow running from within a Claude Code session
     env = {**os.environ, "CLAUDECODE": ""}
 
-    result = subprocess.run(
+    proc = subprocess.Popen(
         cmd,
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
         env=env,
     )
 
-    if result.returncode != 0:
+    result_text = ""
+    input_tokens = 0
+    output_tokens = 0
+
+    for line in proc.stdout:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+
+        if on_event is not None:
+            on_event(event)
+
+        if event.get("type") == "result":
+            result_text = event.get("result", "")
+            usage = event.get("usage", {})
+            input_tokens = usage.get("input_tokens", 0)
+            output_tokens = usage.get("output_tokens", 0)
+
+    proc.wait()
+
+    if proc.returncode != 0:
+        stderr_output = proc.stderr.read() if proc.stderr else ""
         raise RuntimeError(
-            f"claude CLI failed (exit {result.returncode}): {result.stderr}"
+            f"claude CLI failed (exit {proc.returncode}): {stderr_output}"
         )
 
-    try:
-        data = json.loads(result.stdout)
-        return data.get("result", result.stdout)
-    except json.JSONDecodeError:
-        return result.stdout.strip()
+    return {
+        "result": result_text,
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+    }
 
 
 class GoogleBackend:

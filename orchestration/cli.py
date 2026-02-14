@@ -892,6 +892,8 @@ def setup_sync_parser(subparsers: argparse._SubParsersAction) -> None:
 
 def cmd_run(args: argparse.Namespace) -> int:
     """Execute a task through the orchestration pipeline."""
+    import logging
+
     from orchestration.config import load_config
     from orchestration.execution import ExecutionEngine
 
@@ -904,9 +906,25 @@ def cmd_run(args: argparse.Namespace) -> int:
         )
         return 1
 
+    verbose = getattr(args, "verbose", False)
+    model_override = getattr(args, "model", None)
+
+    # Configure logging to stderr
+    log_level = logging.DEBUG if verbose else logging.WARNING
+    logging.basicConfig(
+        level=log_level,
+        format="%(name)s: %(message)s",
+        stream=sys.stderr,
+    )
+
     economy = getattr(args, "economy", False)
     config = load_config()
-    engine = ExecutionEngine(config=config, economy=economy)
+    engine = ExecutionEngine(
+        config=config,
+        economy=economy,
+        model_override=model_override,
+        verbose=verbose,
+    )
 
     issue = getattr(args, "issue", None)
     pr = getattr(args, "pr", None)
@@ -984,6 +1002,17 @@ def setup_run_parser(subparsers: argparse._SubParsersAction) -> None:
         action="store_true",
         default=False,
         help="Show execution plan without running",
+    )
+    parser.add_argument(
+        "--model",
+        default=None,
+        help="Override model for all agents (e.g. opus, sonnet, or full model ID)",
+    )
+    parser.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        default=False,
+        help="Show agent tool usage and progress on stderr",
     )
     parser.add_argument(
         "--format",

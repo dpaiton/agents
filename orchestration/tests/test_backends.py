@@ -12,6 +12,7 @@ Tests are written first (P7: Spec / Test / Evals First) and cover:
 
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -473,6 +474,21 @@ class TestOpenAIBackend:
 # ---------------------------------------------------------------------------
 
 
+def _make_mock_popen(
+    stdout_lines: list[str],
+    returncode: int = 0,
+    stderr_text: str = "",
+):
+    """Create a mock Popen that yields stdout_lines and returns the given code."""
+    mock_proc = MagicMock()
+    mock_proc.stdout = iter(stdout_lines)
+    mock_proc.stderr = MagicMock()
+    mock_proc.stderr.read.return_value = stderr_text
+    mock_proc.returncode = returncode
+    mock_proc.wait.return_value = returncode
+    return mock_proc
+
+
 class TestClaudeCliBackend:
     """Tests for ClaudeCliBackend with mocked subprocess."""
 
@@ -492,30 +508,29 @@ class TestClaudeCliBackend:
         assert backend.model == "claude-custom"
 
     @patch("shutil.which", return_value="/usr/bin/claude")
-    @patch("orchestration.backends.subprocess.run")
-    def test_complete_calls_claude_cli(self, mock_run, _mock_which):
-        mock_run.return_value = MagicMock(
-            returncode=0,
-            stdout='{"result": "cli response"}',
-            stderr="",
-        )
+    @patch("orchestration.backends.subprocess.Popen")
+    def test_complete_calls_claude_cli(self, mock_popen, _mock_which):
+        result_event = json.dumps({
+            "type": "result",
+            "result": "cli response",
+            "usage": {"input_tokens": 10, "output_tokens": 5},
+        })
+        mock_popen.return_value = _make_mock_popen([result_event + "\n"])
         backend = ClaudeCliBackend()
         result = backend.complete("test prompt")
 
         assert result == "cli response"
-        mock_run.assert_called_once()
-        cmd = mock_run.call_args[0][0]
+        mock_popen.assert_called_once()
+        cmd = mock_popen.call_args[0][0]
         assert cmd[0] == "claude"
         assert "-p" in cmd
         assert "test prompt" in cmd
 
     @patch("shutil.which", return_value="/usr/bin/claude")
-    @patch("orchestration.backends.subprocess.run")
-    def test_complete_raises_on_cli_failure(self, mock_run, _mock_which):
-        mock_run.return_value = MagicMock(
-            returncode=1,
-            stdout="",
-            stderr="error occurred",
+    @patch("orchestration.backends.subprocess.Popen")
+    def test_complete_raises_on_cli_failure(self, mock_popen, _mock_which):
+        mock_popen.return_value = _make_mock_popen(
+            [], returncode=1, stderr_text="error occurred",
         )
         backend = ClaudeCliBackend()
         with pytest.raises(RuntimeError, match="claude CLI failed"):
@@ -530,44 +545,94 @@ class TestClaudeCliBackend:
 class TestRunClaudeCli:
     """Tests for the _run_claude_cli helper."""
 
-    @patch("orchestration.backends.subprocess.run")
-    def test_passes_model_flag(self, mock_run):
-        mock_run.return_value = MagicMock(
-            returncode=0, stdout='{"result": "ok"}', stderr="",
-        )
+    def _result_line(self, text="ok", input_tokens=10, output_tokens=5):
+        return json.dumps({
+            "type": "result",
+            "result": text,
+            "usage": {"input_tokens": input_tokens, "output_tokens": output_tokens},
+        }) + "\n"
+
+    @patch("orchestration.backends.subprocess.Popen")
+    def test_passes_model_flag(self, mock_popen):
+        mock_popen.return_value = _make_mock_popen([self._result_line()])
         _run_claude_cli("prompt", model="sonnet")
-        cmd = mock_run.call_args[0][0]
+        cmd = mock_popen.call_args[0][0]
         assert "--model" in cmd
         idx = cmd.index("--model")
         assert cmd[idx + 1] == "sonnet"
 
-    @patch("orchestration.backends.subprocess.run")
-    def test_passes_system_prompt_flag(self, mock_run):
-        mock_run.return_value = MagicMock(
-            returncode=0, stdout='{"result": "ok"}', stderr="",
-        )
+    @patch("orchestration.backends.subprocess.Popen")
+    def test_passes_system_prompt_flag(self, mock_popen):
+        mock_popen.return_value = _make_mock_popen([self._result_line()])
         _run_claude_cli("prompt", system_prompt="You are helpful.")
-        cmd = mock_run.call_args[0][0]
+        cmd = mock_popen.call_args[0][0]
         assert "--system-prompt" in cmd
         idx = cmd.index("--system-prompt")
         assert cmd[idx + 1] == "You are helpful."
 
-    @patch("orchestration.backends.subprocess.run")
-    def test_unsets_claudecode_env(self, mock_run):
-        mock_run.return_value = MagicMock(
-            returncode=0, stdout='{"result": "ok"}', stderr="",
-        )
+    @patch("orchestration.backends.subprocess.Popen")
+    def test_unsets_claudecode_env(self, mock_popen):
+        mock_popen.return_value = _make_mock_popen([self._result_line()])
         _run_claude_cli("prompt")
-        env = mock_run.call_args[1]["env"]
+        env = mock_popen.call_args[1]["env"]
         assert env["CLAUDECODE"] == ""
 
-    @patch("orchestration.backends.subprocess.run")
-    def test_handles_non_json_output(self, mock_run):
-        mock_run.return_value = MagicMock(
-            returncode=0, stdout="plain text response", stderr="",
-        )
+    @patch("orchestration.backends.subprocess.Popen")
+    def test_uses_stream_json_format(self, mock_popen):
+        mock_popen.return_value = _make_mock_popen([self._result_line()])
+        _run_claude_cli("prompt")
+        cmd = mock_popen.call_args[0][0]
+        assert "--output-format" in cmd
+        idx = cmd.index("--output-format")
+        assert cmd[idx + 1] == "stream-json"
+
+    @patch("orchestration.backends.subprocess.Popen")
+    def test_returns_dict_with_result_and_tokens(self, mock_popen):
+        mock_popen.return_value = _make_mock_popen([
+            self._result_line("hello", 100, 50),
+        ])
         result = _run_claude_cli("prompt")
-        assert result == "plain text response"
+        assert isinstance(result, dict)
+        assert result["result"] == "hello"
+        assert result["input_tokens"] == 100
+        assert result["output_tokens"] == 50
+
+    @patch("orchestration.backends.subprocess.Popen")
+    def test_handles_non_json_lines(self, mock_popen):
+        mock_popen.return_value = _make_mock_popen([
+            "not json\n",
+            self._result_line("ok"),
+        ])
+        result = _run_claude_cli("prompt")
+        assert result["result"] == "ok"
+
+    @patch("orchestration.backends.subprocess.Popen")
+    def test_passes_allowed_tools_flag(self, mock_popen):
+        mock_popen.return_value = _make_mock_popen([self._result_line()])
+        _run_claude_cli("prompt", allowed_tools=["Bash", "Write"])
+        cmd = mock_popen.call_args[0][0]
+        assert "--allowedTools" in cmd
+        idx = cmd.index("--allowedTools")
+        assert cmd[idx + 1] == "Bash,Write"
+
+    @patch("orchestration.backends.subprocess.Popen")
+    def test_no_allowed_tools_flag_when_none(self, mock_popen):
+        mock_popen.return_value = _make_mock_popen([self._result_line()])
+        _run_claude_cli("prompt")
+        cmd = mock_popen.call_args[0][0]
+        assert "--allowedTools" not in cmd
+
+    @patch("orchestration.backends.subprocess.Popen")
+    def test_on_event_callback(self, mock_popen):
+        events = []
+        mock_popen.return_value = _make_mock_popen([
+            json.dumps({"type": "progress", "data": "working"}) + "\n",
+            self._result_line(),
+        ])
+        _run_claude_cli("prompt", on_event=lambda e: events.append(e))
+        assert len(events) == 2
+        assert events[0]["type"] == "progress"
+        assert events[1]["type"] == "result"
 
 
 # ---------------------------------------------------------------------------
