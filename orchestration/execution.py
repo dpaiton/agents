@@ -42,7 +42,71 @@ AGENT_MODEL_KEY: dict[str, str] = {
     "integration-engineer": "integration",
     "designer": "design",
     "project-manager": "project-management",
+    # Project-specific agents
+    "blender-engineer": "code-change",
+    "unity-engineer": "code-change",
+    "unity-asset-designer": "design",
+    "gamedev-integration-engineer": "integration",
 }
+
+# Tool permissions per agent role
+_ENGINEERING_TOOLS = ["Bash", "Read", "Edit", "Write", "Glob", "Grep"]
+_READONLY_TOOLS = ["Read", "Glob", "Grep"]
+
+AGENT_TOOLS: dict[str, list[str]] = {
+    # Engineering agents — can write code and run commands
+    "backend-engineer": _ENGINEERING_TOOLS,
+    "frontend-engineer": _ENGINEERING_TOOLS,
+    "ml-engineer": _ENGINEERING_TOOLS,
+    "infrastructure-engineer": _ENGINEERING_TOOLS,
+    "integration-engineer": _ENGINEERING_TOOLS,
+    "performance-engineer": _ENGINEERING_TOOLS,
+    "orchestrator": _ENGINEERING_TOOLS,
+    "blender-engineer": _ENGINEERING_TOOLS,
+    "unity-engineer": _ENGINEERING_TOOLS,
+    "gamedev-integration-engineer": _ENGINEERING_TOOLS,
+    # Read-only agents
+    "architect": _READONLY_TOOLS,
+    "reviewer": _READONLY_TOOLS,
+    "designer": _READONLY_TOOLS,
+    "project-manager": _READONLY_TOOLS,
+    "unity-asset-designer": _READONLY_TOOLS,
+}
+
+# Model shorthand resolution
+MODEL_SHORTHANDS: dict[str, str] = {
+    "opus": "claude-opus-4-20250514",
+    "sonnet": "claude-sonnet-4-20250514",
+    "haiku": "claude-haiku-3-5-20241022",
+}
+
+# Economy demotion: push one tier down (opus→sonnet, sonnet→haiku, haiku stays)
+ECONOMY_DEMOTION: dict[str, str] = {
+    "claude-opus-4-20250514": "claude-sonnet-4-20250514",
+    "claude-sonnet-4-20250514": "claude-haiku-3-5-20241022",
+}
+
+
+def resolve_model_shorthand(model: str) -> str:
+    """Resolve a model shorthand (e.g. 'opus') to a full model ID."""
+    return MODEL_SHORTHANDS.get(model, model)
+
+
+def demote_model(model_id: str) -> str:
+    """Push a model down one tier for economy mode.
+
+    opus → sonnet, sonnet → haiku, haiku stays haiku.
+    Unknown model IDs pass through unchanged.
+    """
+    return ECONOMY_DEMOTION.get(model_id, model_id)
+
+
+def _agent_name_to_env_var(agent: str) -> str:
+    """Convert an agent name to its env var name.
+
+    ``"blender-engineer"`` → ``"BLENDER_ENGINEER_MODEL"``
+    """
+    return agent.upper().replace("-", "_") + "_MODEL"
 
 # Directories for agent definitions
 _REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -113,9 +177,15 @@ class ExecutionEngine:
         config: EcoConfig | None = None,
         state_dir: str | Path | None = None,
         economy: bool = False,
+        model_override: str | None = None,
+        verbose: bool = False,
     ) -> None:
         self.config = config or load_config()
         self.economy = economy
+        self.model_override = (
+            resolve_model_shorthand(model_override) if model_override else None
+        )
+        self.verbose = verbose
         self.state_dir = Path(state_dir or self.STATE_DIR)
         self.runs_path = self.state_dir / self.RUNS_FILE
         self._router = TaskRouter()
@@ -186,7 +256,10 @@ class ExecutionEngine:
         budget = self.config.token_budget
         total_tokens = 0
 
-        for agent in run.agent_sequence:
+        import sys as _sys
+
+        agent_count = len(run.agent_sequence)
+        for idx, agent in enumerate(run.agent_sequence, 1):
             # Budget check
             if budget > 0 and total_tokens >= budget:
                 run.status = "aborted"
@@ -197,6 +270,10 @@ class ExecutionEngine:
                 self._record_run(run)
                 return run
 
+            print(
+                f"[{idx}/{agent_count}] Running {agent}...",
+                file=_sys.stderr,
+            )
             result = self._run_agent(agent, run)
             input_tokens = result.get("input_tokens", 0)
             output_tokens = result.get("output_tokens", 0)
@@ -283,9 +360,24 @@ class ExecutionEngine:
         # Resolve the agent definition file (project-aware)
         system_prompt = _load_agent_definition(agent, run)
 
-        # Select model for this agent's role
-        model_key = AGENT_MODEL_KEY.get(agent, "code-change")
-        model = select_model(model_key, config=self.config, economy=self.economy)
+        # Select model — priority: --model flag > per-agent env var > MODEL_TABLE
+        if self.model_override:
+            model = self.model_override
+        else:
+            env_var = _agent_name_to_env_var(agent)
+            env_model = os.environ.get(env_var)
+            if env_model:
+                model = resolve_model_shorthand(env_model)
+                if self.economy:
+                    model = demote_model(model)
+            else:
+                model_key = AGENT_MODEL_KEY.get(agent, "code-change")
+                model = select_model(
+                    model_key, config=self.config, economy=self.economy,
+                )
+
+        # Resolve tool permissions for this agent
+        allowed_tools = AGENT_TOOLS.get(agent, _READONLY_TOOLS)
 
         # Build the user message with task context
         parts = [f"## Task\n{run.task}"]
@@ -303,7 +395,10 @@ class ExecutionEngine:
             return self._run_agent_sdk(agent, model, system_prompt, user_message, api_key)
 
         # Fall back to claude CLI
-        return self._run_agent_cli(agent, model, system_prompt, user_message)
+        return self._run_agent_cli(
+            agent, model, system_prompt, user_message,
+            allowed_tools=allowed_tools,
+        )
 
     def _run_agent_sdk(
         self, agent: str, model: str, system_prompt: str, user_message: str, api_key: str,
@@ -355,23 +450,54 @@ class ExecutionEngine:
             }
 
     def _run_agent_cli(
-        self, agent: str, model: str, system_prompt: str, user_message: str,
+        self,
+        agent: str,
+        model: str,
+        system_prompt: str,
+        user_message: str,
+        allowed_tools: list[str] | None = None,
     ) -> dict:
         """Run an agent step via the ``claude`` CLI."""
+        import sys as _sys
+
         from orchestration.backends import _run_claude_cli
 
+        def _on_event(event: dict) -> None:
+            if not self.verbose:
+                return
+            etype = event.get("type", "")
+            if etype == "assistant" and "message" in event:
+                msg = event["message"]
+                if msg.get("type") == "tool_use":
+                    print(
+                        f"  [{agent}] tool: {msg.get('name', '?')}",
+                        file=_sys.stderr,
+                    )
+
         try:
-            output_text = _run_claude_cli(
-                user_message, model=model, system_prompt=system_prompt,
+            cli_result = _run_claude_cli(
+                user_message,
+                model=model,
+                system_prompt=system_prompt,
+                allowed_tools=allowed_tools,
+                on_event=_on_event,
             )
 
-            logger.info("Agent %s completed (CLI)", agent)
+            input_tokens = cli_result.get("input_tokens", 0)
+            output_tokens = cli_result.get("output_tokens", 0)
+
+            logger.info(
+                "Agent %s completed (CLI): %d input, %d output tokens",
+                agent,
+                input_tokens,
+                output_tokens,
+            )
 
             return {
                 "agent": agent,
-                "input_tokens": 0,
-                "output_tokens": 0,
-                "output": output_text,
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "output": cli_result.get("result", ""),
             }
         except Exception as exc:
             return {
