@@ -1,0 +1,19 @@
+# Blender Python Generation Scripts Requirements
+#
+# Core requirement: Blender 3.6+ with bpy API
+# Install Blender from: https://www.blender.org/download/
+#
+# For testing and validation:
+pytest>=7.0.0
+pytest-xvfb>=2.0.0  # For headless testing on Linux
+
+# Optional development dependencies:
+black>=22.0.0       # Code formatting
+flake8>=4.0.0       # Code linting
+mypy>=0.950         # Type checking
+
+# Note: bpy (Blender Python API) is included with Blender installation
+# and cannot be installed separately via pip. These scripts must be run
+# with Blender's embedded Python interpreter:
+#
+# blender --background --python script.py
