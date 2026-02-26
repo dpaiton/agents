@@ -134,14 +134,16 @@ def _run_claude_cli(
     Raises:
         RuntimeError: If the CLI invocation fails.
     """
-    cmd = ["claude", "-p", "--output-format", "stream-json"]
+    cmd = ["claude", "-p", "--verbose", "--output-format", "stream-json"]
     if model:
         cmd.extend(["--model", model])
     if system_prompt:
         cmd.extend(["--system-prompt", system_prompt])
     if allowed_tools:
         cmd.extend(["--allowedTools", ",".join(allowed_tools)])
-    cmd.append(prompt)
+    # Use "--" to stop flag parsing before the positional prompt argument.
+    # Without this, variadic flags like --allowedTools consume the prompt.
+    cmd.extend(["--", prompt])
 
     # Allow running from within a Claude Code session
     env = {**os.environ, "CLAUDECODE": ""}

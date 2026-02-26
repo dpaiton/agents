@@ -560,7 +560,124 @@ class TestExecutionEngine:
 
 
 # ---------------------------------------------------------------------------
-# DeployEngine tests
+# Execute terminal-state invariant
+# ---------------------------------------------------------------------------
+
+
+class TestExecuteTerminalStateInvariant:
+    """Every call to execute() must leave the run in a terminal state.
+
+    The root cause: if _run_agent raises an unexpected exception (not a dict
+    with an 'error' key, but a real Python exception), the run was left in
+    "running" status forever — an orphaned run that would never be cleaned up.
+
+    These tests verify the invariant: regardless of how _run_agent behaves,
+    the run MUST reach a terminal state (complete, failed, or aborted) and
+    MUST have ended_at set.
+    """
+
+    def _make_engine(self, tmp_path):
+        return ExecutionEngine(state_dir=tmp_path / "state")
+
+    def test_unexpected_exception_transitions_to_failed(self, tmp_path):
+        """An unhandled exception in _run_agent must result in status='failed'."""
+        engine = self._make_engine(tmp_path)
+
+        def exploding_agent(agent, run):
+            raise RuntimeError("claude CLI segfaulted")
+
+        engine._run_agent = exploding_agent  # type: ignore[assignment]
+
+        run = engine.plan("Do something")
+        result = engine.execute(run)
+        assert result.status == "failed"
+        assert result.ended_at is not None
+
+    def test_unexpected_exception_records_error_message(self, tmp_path):
+        """The exception message must be captured in the run's error field."""
+        engine = self._make_engine(tmp_path)
+
+        def exploding_agent(agent, run):
+            raise ValueError("bad model ID")
+
+        engine._run_agent = exploding_agent  # type: ignore[assignment]
+
+        run = engine.plan("Do something")
+        result = engine.execute(run)
+        assert "bad model ID" in result.error
+
+    def test_unexpected_exception_persists_to_jsonl(self, tmp_path):
+        """Failed runs from exceptions must be persisted, not lost in memory."""
+        state_dir = tmp_path / "state"
+        engine = ExecutionEngine(state_dir=state_dir)
+
+        def exploding_agent(agent, run):
+            raise TypeError("unexpected NoneType")
+
+        engine._run_agent = exploding_agent  # type: ignore[assignment]
+
+        run = engine.plan("Do something")
+        engine.execute(run)
+
+        # The persisted run should be in failed state, not running
+        all_runs = engine.get_all_runs()
+        matching = [r for r in all_runs if r.run_id == run.run_id]
+        assert len(matching) == 1
+        assert matching[0].status == "failed"
+
+    def test_run_never_stays_in_running_state(self, tmp_path):
+        """After execute() returns, no run should remain in 'running' status."""
+        scenarios = [
+            # Normal success
+            lambda a, r: {"agent": a, "input_tokens": 1, "output_tokens": 1, "output": "ok"},
+            # Agent-reported error
+            lambda a, r: {"agent": a, "input_tokens": 0, "output_tokens": 0, "error": "fail"},
+            # Unexpected exception
+            None,  # sentinel, handled below
+        ]
+
+        for i, mock_fn in enumerate(scenarios):
+            sub_engine = ExecutionEngine(state_dir=tmp_path / f"state_{i}")
+            if mock_fn is None:
+                def raise_exc(a, r):
+                    raise OSError("disk full")
+                sub_engine._run_agent = raise_exc  # type: ignore[assignment]
+            else:
+                sub_engine._run_agent = mock_fn  # type: ignore[assignment]
+
+            run = sub_engine.plan("Task")
+            sub_engine.execute(run)
+
+            active = sub_engine.get_active_runs()
+            assert active == [], (
+                f"Scenario {i}: run still in 'running' state after execute() returned"
+            )
+
+    def test_exception_on_second_agent_still_records_first_agent_tokens(self, tmp_path):
+        """If agent 2 explodes, tokens from agent 1 are still tracked."""
+        engine = self._make_engine(tmp_path)
+
+        call_count = 0
+
+        def mixed_agent(agent, run):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                return {"agent": agent, "input_tokens": 100, "output_tokens": 50, "output": "ok"}
+            raise ConnectionError("network down")
+
+        engine._run_agent = mixed_agent  # type: ignore[assignment]
+
+        run = engine.plan("Add a feature")  # multi-agent sequence
+        result = engine.execute(run)
+
+        assert result.status == "failed"
+        assert result.token_usage["input"] >= 100
+        assert result.token_usage["output"] >= 50
+
+
+# ---------------------------------------------------------------------------
+# RunNamedAgent tests
 # ---------------------------------------------------------------------------
 
 

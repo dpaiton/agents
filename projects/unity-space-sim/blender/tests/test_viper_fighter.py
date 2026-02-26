@@ -147,6 +147,80 @@ validate_fighter(test_obj, "LOD0")
         return False
 
 
+def test_visual_fidelity():
+    """Compare generated renders against concept art using vision model.
+
+    Requires ANTHROPIC_API_KEY in environment. Skips gracefully without it.
+    Runs validate_render_batch() on the test output from test_viper_generation().
+    """
+    print("=== Testing Visual Fidelity ===\n")
+
+    import shutil
+    has_api_key = bool(os.environ.get("ANTHROPIC_API_KEY"))
+    has_cli = bool(shutil.which("claude"))
+    if not has_api_key and not has_cli:
+        print("⊘ Skipping visual fidelity test (no ANTHROPIC_API_KEY and no claude CLI)")
+        return None  # None = skipped
+
+    # Paths
+    render_dir = Path(__file__).parent / "test_output" / "viper"
+    concept_dir = (
+        Path(__file__).resolve().parents[2] / "assets" / "drafts" / "fighter-v4"
+    )
+
+    if not render_dir.exists():
+        print(f"✗ Render directory not found: {render_dir}")
+        print("  Run test_viper_generation() first to produce renders.")
+        return False
+
+    if not concept_dir.exists():
+        print(f"✗ Concept art directory not found: {concept_dir}")
+        return False
+
+    # Import the validation tool
+    tools_dir = Path(__file__).resolve().parents[2] / "tools"
+    sys.path.insert(0, str(tools_dir))
+    try:
+        from validate_visual import validate_render_batch, format_result_text
+    except ImportError as e:
+        print(f"✗ Could not import validate_visual: {e}")
+        return False
+
+    # Run batch validation
+    print(f"Render dir:  {render_dir}")
+    print(f"Concept dir: {concept_dir}")
+    print()
+
+    try:
+        results = validate_render_batch(
+            render_dir=str(render_dir),
+            concept_dir=str(concept_dir),
+            threshold=0.75,
+        )
+    except Exception as e:
+        print(f"✗ Visual validation failed: {e}")
+        return False
+
+    if not results:
+        print("⊘ No render/concept pairs found to compare")
+        return None
+
+    # Print results
+    all_passed = True
+    for result in results:
+        print(format_result_text(result))
+        print()
+        if not result.passed:
+            all_passed = False
+
+    if all_passed:
+        print("✓ All renders passed visual fidelity check")
+    else:
+        print("✗ Some renders failed visual fidelity check")
+
+    return all_passed
+
+
 def main():
     """Run all tests."""
     print("Viper Fighter Generation Test Suite")
@@ -160,11 +234,19 @@ def main():
     print("\n2. Running full generation test...")
     generation_ok = test_viper_generation()
 
+    # Run visual fidelity test (requires API key)
+    print("\n3. Running visual fidelity test...")
+    visual_result = test_visual_fidelity()
+
     # Final summary
     print("\n" + "=" * 40)
     print("Final Results:")
     print(f"  Validation Test: {'✓ PASS' if validation_ok else '✗ FAIL'}")
     print(f"  Generation Test: {'✓ PASS' if generation_ok else '✗ FAIL'}")
+    if visual_result is None:
+        print(f"  Visual Fidelity: ⊘ SKIPPED")
+    else:
+        print(f"  Visual Fidelity: {'✓ PASS' if visual_result else '✗ FAIL'}")
 
     if validation_ok and generation_ok:
         print("\n✓ All tests passed!")

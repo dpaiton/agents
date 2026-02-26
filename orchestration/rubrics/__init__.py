@@ -37,9 +37,11 @@ class EvaluationCriterion:
 
 from orchestration.rubrics.code_review import CODE_REVIEW_RUBRIC  # noqa: E402
 from orchestration.rubrics.test_quality import TEST_QUALITY_RUBRIC  # noqa: E402
+from orchestration.rubrics.visual_fidelity import VISUAL_FIDELITY_RUBRIC  # noqa: E402
 
 __all__ = [
     "EvaluationCriterion",
     "CODE_REVIEW_RUBRIC",
     "TEST_QUALITY_RUBRIC",
+    "VISUAL_FIDELITY_RUBRIC",
 ]

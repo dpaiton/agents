@@ -636,6 +636,109 @@ class TestRunClaudeCli:
 
 
 # ---------------------------------------------------------------------------
+# TestRunClaudeCliCommandStructure
+# ---------------------------------------------------------------------------
+
+
+class TestRunClaudeCliCommandStructure:
+    """Verify structural invariants of the CLI command built by _run_claude_cli.
+
+    These tests ensure the subprocess argv is well-formed regardless of which
+    optional parameters are supplied.  They target two root causes:
+
+    1. The prompt positional argument must be protected from being consumed by
+       variadic flags (like ``--allowedTools <tools...>``).
+    2. All flags required by the chosen output format must be present.
+    """
+
+    def _result_line(self, text="ok"):
+        return json.dumps({
+            "type": "result",
+            "result": text,
+            "usage": {"input_tokens": 1, "output_tokens": 1},
+        }) + "\n"
+
+    # -- Prompt isolation (root cause: variadic flags eating the prompt) ------
+
+    @patch("orchestration.backends.subprocess.Popen")
+    def test_prompt_appears_after_double_dash(self, mock_popen):
+        """The prompt must follow a '--' separator so variadic flags cannot consume it."""
+        mock_popen.return_value = _make_mock_popen([self._result_line()])
+        _run_claude_cli("my prompt")
+        cmd = mock_popen.call_args[0][0]
+        assert "--" in cmd, "Command must contain '--' separator"
+        dd_idx = cmd.index("--")
+        assert cmd[dd_idx + 1] == "my prompt"
+
+    @patch("orchestration.backends.subprocess.Popen")
+    def test_prompt_isolated_from_allowed_tools(self, mock_popen):
+        """With --allowedTools, the prompt must not be adjacent to the tools list."""
+        mock_popen.return_value = _make_mock_popen([self._result_line()])
+        _run_claude_cli("user request", allowed_tools=["Bash", "Read", "Write"])
+        cmd = mock_popen.call_args[0][0]
+
+        tools_idx = cmd.index("--allowedTools")
+        dd_idx = cmd.index("--")
+        prompt_idx = cmd.index("user request")
+
+        # The tools value sits between --allowedTools and --, not touching the prompt
+        assert tools_idx < dd_idx < prompt_idx
+
+    @patch("orchestration.backends.subprocess.Popen")
+    def test_prompt_isolated_with_all_optional_flags(self, mock_popen):
+        """Prompt is correctly separated even when all optional flags are present."""
+        mock_popen.return_value = _make_mock_popen([self._result_line()])
+        _run_claude_cli(
+            "complex prompt\nwith newlines",
+            model="sonnet",
+            system_prompt="You are helpful.\nBe concise.",
+            allowed_tools=["Bash", "Edit", "Read", "Write", "Glob", "Grep"],
+        )
+        cmd = mock_popen.call_args[0][0]
+        dd_idx = cmd.index("--")
+        # Prompt is the very last element, right after '--'
+        assert cmd[-1] == "complex prompt\nwith newlines"
+        assert dd_idx == len(cmd) - 2
+
+    @patch("orchestration.backends.subprocess.Popen")
+    def test_prompt_is_always_last_argument(self, mock_popen):
+        """The prompt must be the final element in the command, in all configurations."""
+        for kwargs in [
+            {},
+            {"model": "sonnet"},
+            {"system_prompt": "sys"},
+            {"allowed_tools": ["Bash"]},
+            {"model": "sonnet", "system_prompt": "sys", "allowed_tools": ["Bash", "Write"]},
+        ]:
+            mock_popen.return_value = _make_mock_popen([self._result_line()])
+            _run_claude_cli("THE_PROMPT", **kwargs)
+            cmd = mock_popen.call_args[0][0]
+            assert cmd[-1] == "THE_PROMPT", (
+                f"Prompt must be last arg; got {cmd[-1]!r} with kwargs={kwargs}"
+            )
+
+    # -- Required flags for stream-json output --------------------------------
+
+    @patch("orchestration.backends.subprocess.Popen")
+    def test_verbose_flag_present(self, mock_popen):
+        """stream-json output format requires --verbose; it must always be in the command."""
+        mock_popen.return_value = _make_mock_popen([self._result_line()])
+        _run_claude_cli("prompt")
+        cmd = mock_popen.call_args[0][0]
+        assert "--verbose" in cmd
+
+    @patch("orchestration.backends.subprocess.Popen")
+    def test_stream_json_and_verbose_coexist(self, mock_popen):
+        """Both --verbose and stream-json must be present together."""
+        mock_popen.return_value = _make_mock_popen([self._result_line()])
+        _run_claude_cli("prompt")
+        cmd = mock_popen.call_args[0][0]
+        fmt_idx = cmd.index("--output-format")
+        assert cmd[fmt_idx + 1] == "stream-json"
+        assert "--verbose" in cmd
+
+
+# ---------------------------------------------------------------------------
 # TestCreateBackendFallback
 # ---------------------------------------------------------------------------
 
