@@ -82,7 +82,7 @@ class ViperConfig:
     # Engines
     ENGINE_RADIUS = 0.22
     ENGINE_LENGTH = 3.0
-    ENGINE_POS_Y = -7.5
+    ENGINE_POS_Y = -4.5
     ENGINE_SPACING_X = 0.5
     ENGINE_SPACING_Z = 0.12
     ENGINE_GLOW_RADIUS = 0.18
@@ -198,12 +198,12 @@ def create_material(mat_config):
         mat.use_backface_culling = False
 
     if 'transmission' in mat_config:
-        principled.inputs['Transmission'].default_value = mat_config['transmission']
+        principled.inputs['Transmission Weight'].default_value = mat_config['transmission']
         principled.inputs['IOR'].default_value = 1.45  # Glass
 
     # Handle emission
     if 'emission' in mat_config and mat_config['emission'] > 0:
-        principled.inputs['Emission'].default_value = mat_config['color'][:3] + (1.0,)
+        principled.inputs['Emission Color'].default_value = mat_config['color'][:3] + (1.0,)
         principled.inputs['Emission Strength'].default_value = mat_config['emission']
 
     # Add output node
@@ -260,10 +260,10 @@ def create_hull():
     bmesh.update_edit_mesh(hull.data)
     bpy.ops.object.mode_set(mode='OBJECT')
 
-    # Add subdivision for smoother shape
+    # Add subdivision for smoother shape (level 1 keeps angular silhouette)
     subdiv = hull.modifiers.new(name='Subdivision', type='SUBSURF')
-    subdiv.levels = 2
-    subdiv.render_levels = 2
+    subdiv.levels = 1
+    subdiv.render_levels = 1
 
     print("✓ Created angular hull")
     return hull
@@ -467,7 +467,7 @@ def create_underslung_turret():
 
     # Select and delete top half
     top_verts = [v for v in bm.verts if v.co.z > 0.01]
-    bmesh.ops.delete(bm, verts=top_verts)
+    bmesh.ops.delete(bm, geom=top_verts, context='VERTS')
 
     bmesh.update_edit_mesh(dome.data)
     bpy.ops.object.mode_set(mode='OBJECT')
@@ -753,13 +753,25 @@ def export_fbx(obj, filepath):
 
 # ==================== Rendering Functions ====================
 
+def _point_camera_at(camera, target_location):
+    """Point camera at a target location using a Track To constraint.
+
+    Works in headless (--background) mode unlike view3d.camera_to_view_selected.
+    """
+    constraint = camera.constraints.new(type='TRACK_TO')
+    constraint.target = bpy.data.objects.new("_cam_target", None)
+    bpy.context.collection.objects.link(constraint.target)
+    constraint.target.location = target_location
+    constraint.track_axis = 'TRACK_NEGATIVE_Z'
+    constraint.up_axis = 'UP_Y'
+
+
 def setup_camera_and_lights():
     """Setup camera and lighting for preview renders."""
     # Add camera for 3/4 view
     bpy.ops.object.camera_add(location=(20, -25, 10))
     camera = bpy.context.active_object
     camera.name = "Render_Camera"
-    camera.rotation_euler = (math.radians(60), 0, math.radians(45))
 
     # Add sun light
     bpy.ops.object.light_add(type='SUN', location=(10, -10, 20))
@@ -778,46 +790,61 @@ def setup_camera_and_lights():
     return camera
 
 
-def render_preview(fighter_obj, output_dir):
-    """Render preview images of the fighter."""
-    # Setup camera and lighting
+def render_preview(fighter_obj, output_dir, hide_objects=None):
+    """Render preview images of the fighter.
+
+    Args:
+        fighter_obj: The LOD0 object to render.
+        output_dir: Directory for output PNGs.
+        hide_objects: Optional list of objects to hide during rendering
+                      (e.g. LOD1/LOD2 copies).
+    """
+    # Hide LOD copies and other non-render objects
+    if hide_objects:
+        for obj in hide_objects:
+            obj.hide_render = True
+
     camera = setup_camera_and_lights()
 
     # Configure render settings
     scene = bpy.context.scene
     scene.render.engine = 'CYCLES'
-    scene.render.device = 'GPU'
-    scene.cycles.samples = 128  # Lower samples for faster preview
+    scene.cycles.device = 'CPU'
+    scene.cycles.samples = 64
     scene.render.resolution_x = 1920
     scene.render.resolution_y = 1080
     scene.render.image_settings.file_format = 'PNG'
     scene.render.film_transparent = True
 
-    # Set camera
     scene.camera = camera
 
-    # Focus camera on fighter
-    bpy.ops.object.select_all(action='DESELECT')
-    fighter_obj.select_set(True)
-    bpy.context.view_layer.objects.active = fighter_obj
-    bpy.ops.view3d.camera_to_view_selected()
+    # Compute the fighter's centre for aiming the camera
+    bbox = fighter_obj.bound_box
+    world_corners = [fighter_obj.matrix_world @ Vector(c) for c in bbox]
+    centre = sum(world_corners, Vector()) / len(world_corners)
 
-    # Render 3/4 view
+    # Use a narrower field of view for less perspective distortion
+    camera.data.lens = 85  # mm — portrait-style, less distortion
+
+    # 3/4 view — elevated front-quarter angle, far enough for 13m ship
+    camera.location = (25, -35, 18)
+    _point_camera_at(camera, centre)
+
     output_path = os.path.join(output_dir, "viper_fighter_3quarter.png")
     scene.render.filepath = output_path
     bpy.ops.render.render(write_still=True)
-    print(f"✓ Rendered 3/4 view: {output_path}")
+    print(f"Rendered 3/4 view: {output_path}")
 
-    # Adjust camera for side view
-    camera.location = (0, -30, 0)
-    camera.rotation_euler = (math.radians(90), 0, 0)
-    bpy.ops.view3d.camera_to_view_selected()
+    # Side view — camera along X axis (hull extends along Y)
+    while camera.constraints:
+        camera.constraints.remove(camera.constraints[0])
+    camera.location = (40, 0, 3)
+    _point_camera_at(camera, centre)
 
-    # Render side profile
     output_path = os.path.join(output_dir, "viper_fighter_side.png")
     scene.render.filepath = output_path
     bpy.ops.render.render(write_still=True)
-    print(f"✓ Rendered side profile: {output_path}")
+    print(f"Rendered side profile: {output_path}")
 
 
 # ==================== Validation ====================
@@ -930,9 +957,13 @@ def main():
         filepath = os.path.join(output_dir, filename)
         export_fbx(lod_obj, filepath)
 
-    # Render preview images
+    # Render preview images (hide LOD1/LOD2 so only LOD0 is visible)
     print("\n--- Rendering Previews ---")
-    render_preview(lods["LOD0"], output_dir)
+    render_preview(
+        lods["LOD0"],
+        output_dir,
+        hide_objects=[lods["LOD1"], lods["LOD2"]],
+    )
 
     print("\n=== ✓ Viper Fighter Generation Complete! ===")
     print("\nGenerated files:")
