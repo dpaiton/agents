@@ -351,7 +351,7 @@ def setup_review_parser(subparsers: argparse._SubParsersAction) -> None:
 
 def _build_rubrics() -> dict[str, dict]:
     """Build the RUBRICS dict from real rubric definitions in orchestration.rubrics."""
-    from orchestration.rubrics import CODE_REVIEW_RUBRIC, TEST_QUALITY_RUBRIC
+    from orchestration.rubrics import CODE_REVIEW_RUBRIC, TEST_QUALITY_RUBRIC, VISUAL_FIDELITY_RUBRIC
 
     def _rubric_to_dict(name: str, description: str, criteria: list) -> dict:
         return {
@@ -377,6 +377,11 @@ def _build_rubrics() -> dict[str, dict]:
             "test_quality",
             "Evaluate test suite quality and TDD compliance",
             TEST_QUALITY_RUBRIC,
+        ),
+        "visual_fidelity": _rubric_to_dict(
+            "visual_fidelity",
+            "Evaluate 3D render visual fidelity against concept art",
+            VISUAL_FIDELITY_RUBRIC,
         ),
     }
 

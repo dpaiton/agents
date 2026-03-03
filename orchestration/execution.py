@@ -259,34 +259,41 @@ class ExecutionEngine:
         import sys as _sys
 
         agent_count = len(run.agent_sequence)
-        for idx, agent in enumerate(run.agent_sequence, 1):
-            # Budget check
-            if budget > 0 and total_tokens >= budget:
-                run.status = "aborted"
-                run.error = (
-                    f"Token budget exceeded: {total_tokens} >= {budget}"
+        try:
+            for idx, agent in enumerate(run.agent_sequence, 1):
+                # Budget check
+                if budget > 0 and total_tokens >= budget:
+                    run.status = "aborted"
+                    run.error = (
+                        f"Token budget exceeded: {total_tokens} >= {budget}"
+                    )
+                    run.ended_at = _now_iso()
+                    self._record_run(run)
+                    return run
+
+                print(
+                    f"[{idx}/{agent_count}] Running {agent}...",
+                    file=_sys.stderr,
                 )
-                run.ended_at = _now_iso()
-                self._record_run(run)
-                return run
+                result = self._run_agent(agent, run)
+                input_tokens = result.get("input_tokens", 0)
+                output_tokens = result.get("output_tokens", 0)
+                run.token_usage["input"] += input_tokens
+                run.token_usage["output"] += output_tokens
+                total_tokens = run.token_usage["input"] + run.token_usage["output"]
 
-            print(
-                f"[{idx}/{agent_count}] Running {agent}...",
-                file=_sys.stderr,
-            )
-            result = self._run_agent(agent, run)
-            input_tokens = result.get("input_tokens", 0)
-            output_tokens = result.get("output_tokens", 0)
-            run.token_usage["input"] += input_tokens
-            run.token_usage["output"] += output_tokens
-            total_tokens = run.token_usage["input"] + run.token_usage["output"]
-
-            if result.get("error"):
-                run.status = "failed"
-                run.error = result["error"]
-                run.ended_at = _now_iso()
-                self._record_run(run)
-                return run
+                if result.get("error"):
+                    run.status = "failed"
+                    run.error = result["error"]
+                    run.ended_at = _now_iso()
+                    self._record_run(run)
+                    return run
+        except Exception as exc:
+            run.status = "failed"
+            run.error = f"Unexpected error during execution: {exc}"
+            run.ended_at = _now_iso()
+            self._record_run(run)
+            return run
 
         run.status = "complete"
         run.ended_at = _now_iso()
