@@ -12,6 +12,12 @@ Usage (CLI):
         --concept path/to/concept.png \\
         --threshold 0.75
 
+    # Multi-run consensus (reduces LLM scoring variance)
+    python validate_visual.py \\
+        --render path/to/render.png \\
+        --concept path/to/concept.png \\
+        --runs 3
+
     # Batch mode: compare standard view pairs
     python validate_visual.py \\
         --render-dir path/to/renders/ \\
@@ -35,9 +41,10 @@ import json
 import os
 import re
 import shutil
+import statistics
 import subprocess
 import sys
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Optional
 
@@ -81,6 +88,9 @@ class ValidationResult:
     passed: bool
     model: str
     raw_response: str = ""
+    num_runs: int = 1
+    score_ranges: dict[str, tuple[int, int]] = field(default_factory=dict)
+    score_std_devs: dict[str, float] = field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -247,6 +257,7 @@ def _call_vision_sdk(
     prompt_text: str,
     model: str,
     api_key: str,
+    temperature: float = 0.0,
 ) -> str:
     """Call Anthropic vision API via SDK (requires ANTHROPIC_API_KEY)."""
     import anthropic
@@ -258,6 +269,7 @@ def _call_vision_sdk(
     message = client.messages.create(
         model=model,
         max_tokens=2048,
+        temperature=temperature,
         messages=[{
             "role": "user",
             "content": [
@@ -300,11 +312,16 @@ def _call_vision_cli(
     concept_path: str,
     prompt_text: str,
     model: str,
+    temperature: float = 0.0,
 ) -> str:
     """Call Claude vision via the claude CLI (handles OAuth natively).
 
     The CLI's Read tool can display images to the model. This path is used
     when ANTHROPIC_API_KEY is not available but the user has an OAuth session.
+
+    Note: The claude CLI does not currently support a --temperature flag.
+    The temperature parameter is accepted for API consistency but has no
+    effect when using the CLI path.
     """
     render_abs = os.path.abspath(render_path)
     concept_abs = os.path.abspath(concept_path)
@@ -349,12 +366,73 @@ def _call_vision_cli(
     return data["result"]
 
 
+def aggregate_criterion_scores(
+    all_run_results: list[list[CriterionResult]],
+) -> tuple[list[CriterionResult], dict[str, tuple[int, int]], dict[str, float]]:
+    """Aggregate scores across multiple runs using median.
+
+    Args:
+        all_run_results: List of per-run CriterionResult lists.
+
+    Returns:
+        Tuple of (median_criteria, score_ranges, score_std_devs).
+        - median_criteria: CriterionResult list with median scores.
+        - score_ranges: Mapping of criterion name to (min, max) score.
+        - score_std_devs: Mapping of criterion name to standard deviation.
+    """
+    # Collect scores per criterion name
+    scores_by_name: dict[str, list[int]] = {}
+    template_by_name: dict[str, CriterionResult] = {}
+    reasonings_by_name: dict[str, list[str]] = {}
+
+    for run_results in all_run_results:
+        for cr in run_results:
+            scores_by_name.setdefault(cr.name, []).append(cr.score)
+            reasonings_by_name.setdefault(cr.name, []).append(cr.reasoning)
+            # Keep last template for metadata (weight, max_score)
+            template_by_name[cr.name] = cr
+
+    median_criteria = []
+    score_ranges: dict[str, tuple[int, int]] = {}
+    score_std_devs: dict[str, float] = {}
+
+    for name, scores in scores_by_name.items():
+        template = template_by_name[name]
+        median_score = int(statistics.median(scores))
+        score_ranges[name] = (min(scores), max(scores))
+        if len(scores) > 1:
+            score_std_devs[name] = round(statistics.stdev(scores), 2)
+        else:
+            score_std_devs[name] = 0.0
+
+        # Pick the reasoning from the run whose score is closest to median
+        best_idx = 0
+        best_dist = abs(scores[0] - median_score)
+        for i, s in enumerate(scores):
+            dist = abs(s - median_score)
+            if dist < best_dist:
+                best_dist = dist
+                best_idx = i
+
+        median_criteria.append(CriterionResult(
+            name=name,
+            score=median_score,
+            max_score=template.max_score,
+            weight=template.weight,
+            reasoning=reasonings_by_name[name][best_idx],
+        ))
+
+    return median_criteria, score_ranges, score_std_devs
+
+
 def validate_render(
     render_path: str,
     concept_path: str,
     threshold: float = 0.75,
     model: str = "claude-sonnet-4-20250514",
     rubric: Optional[list] = None,
+    num_runs: int = 1,
+    temperature: float = 0.0,
 ) -> ValidationResult:
     """Compare a render against concept art using Claude vision.
 
@@ -367,17 +445,24 @@ def validate_render(
         threshold: Normalized score (0-1) required to pass.
         model: Anthropic model to use for vision.
         rubric: Optional override rubric criteria list.
+        num_runs: Number of scoring runs for consensus (default 1).
+            When >1, the median score per criterion is used.
+        temperature: Sampling temperature for the vision model (default 0.0).
+            Lower values reduce randomness in scoring.
 
     Returns:
         ValidationResult with scores and pass/fail.
 
     Raises:
         FileNotFoundError: If image files don't exist.
-        ValueError: If no authentication method is available.
+        ValueError: If no authentication method is available or num_runs < 1.
     """
     from orchestration.rubrics import VISUAL_FIDELITY_RUBRIC
 
     rubric = rubric or VISUAL_FIDELITY_RUBRIC
+
+    if num_runs < 1:
+        raise ValueError(f"num_runs must be >= 1, got {num_runs}")
 
     # Validate inputs
     for path in (render_path, concept_path):
@@ -387,41 +472,65 @@ def validate_render(
     # Build prompt
     prompt_text = build_validation_prompt(rubric)
 
-    # Try SDK first (ANTHROPIC_API_KEY), fall back to claude CLI (OAuth)
+    # Determine authentication method once
     api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if api_key:
-        raw_response = _call_vision_sdk(
-            render_path, concept_path, prompt_text, model, api_key,
-        )
-    elif shutil.which("claude"):
-        raw_response = _call_vision_cli(
-            render_path, concept_path, prompt_text, model,
-        )
-    else:
+    has_cli = shutil.which("claude")
+
+    if not api_key and not has_cli:
         raise ValueError(
             "No authentication available. Set ANTHROPIC_API_KEY for SDK access, "
             "or install the claude CLI (handles OAuth natively)."
         )
 
-    # Parse response
-    criteria_results = parse_vision_response(raw_response, rubric)
+    # Run vision call num_runs times
+    all_run_results: list[list[CriterionResult]] = []
+    all_raw_responses: list[str] = []
+
+    for run_idx in range(num_runs):
+        if api_key:
+            raw_response = _call_vision_sdk(
+                render_path, concept_path, prompt_text, model, api_key,
+                temperature=temperature,
+            )
+        else:
+            raw_response = _call_vision_cli(
+                render_path, concept_path, prompt_text, model,
+                temperature=temperature,
+            )
+
+        all_raw_responses.append(raw_response)
+        criteria_results = parse_vision_response(raw_response, rubric)
+        all_run_results.append(criteria_results)
+
+    # Aggregate: single run uses results directly, multiple runs use median
+    if num_runs == 1:
+        final_criteria = all_run_results[0]
+        score_ranges: dict[str, tuple[int, int]] = {}
+        score_std_devs: dict[str, float] = {}
+    else:
+        final_criteria, score_ranges, score_std_devs = aggregate_criterion_scores(
+            all_run_results
+        )
 
     # Calculate scores
-    total_score = sum(c.score * c.weight for c in criteria_results)
-    max_possible = sum(c.max_score * c.weight for c in criteria_results)
+    total_score = sum(c.score * c.weight for c in final_criteria)
+    max_possible = sum(c.max_score * c.weight for c in final_criteria)
     normalized = total_score / max_possible if max_possible > 0 else 0.0
 
     return ValidationResult(
         render_path=render_path,
         concept_path=concept_path,
-        criteria=criteria_results,
+        criteria=final_criteria,
         total_score=total_score,
         max_possible_score=max_possible,
         normalized_score=normalized,
         threshold=threshold,
         passed=normalized >= threshold,
         model=model,
-        raw_response=raw_response,
+        raw_response=all_raw_responses[-1],
+        num_runs=num_runs,
+        score_ranges=score_ranges,
+        score_std_devs=score_std_devs,
     )
 
 
@@ -438,6 +547,8 @@ def validate_render_batch(
     view_pairs: Optional[dict[str, str]] = None,
     threshold: float = 0.75,
     model: str = "claude-sonnet-4-20250514",
+    num_runs: int = 1,
+    temperature: float = 0.0,
 ) -> list[ValidationResult]:
     """Validate multiple render/concept pairs.
 
@@ -447,6 +558,8 @@ def validate_render_batch(
         view_pairs: Mapping of render filename to concept filename.
         threshold: Pass threshold for each pair.
         model: Vision model to use.
+        num_runs: Number of scoring runs for consensus per pair.
+        temperature: Sampling temperature for the vision model.
 
     Returns:
         List of ValidationResult, one per pair.
@@ -470,6 +583,8 @@ def validate_render_batch(
             concept_path=concept_path,
             threshold=threshold,
             model=model,
+            num_runs=num_runs,
+            temperature=temperature,
         )
         results.append(result)
 
@@ -489,12 +604,18 @@ def format_result_text(result: ValidationResult) -> str:
         f"  Score: {result.normalized_score:.0%} (threshold: {result.threshold:.0%})",
         f"  Weighted total: {result.total_score:.1f} / {result.max_possible_score:.1f}",
         f"  Model: {result.model}",
-        "",
     ]
+    if result.num_runs > 1:
+        lines.append(f"  Consensus: median of {result.num_runs} runs")
+    lines.append("")
+
     for c in result.criteria:
-        lines.append(
-            f"  {c.name}: {c.score}/{c.max_score} (weight {c.weight})"
-        )
+        score_line = f"  {c.name}: {c.score}/{c.max_score} (weight {c.weight})"
+        if c.name in result.score_ranges:
+            lo, hi = result.score_ranges[c.name]
+            std = result.score_std_devs.get(c.name, 0.0)
+            score_line += f"  [range: {lo}-{hi}, std: {std:.2f}]"
+        lines.append(score_line)
         lines.append(f"    {c.reasoning}")
     return "\n".join(lines)
 
@@ -534,6 +655,14 @@ def main():
         help="Anthropic model for vision (default: claude-sonnet-4-20250514)",
     )
     parser.add_argument(
+        "--runs", type=int, default=1,
+        help="Number of scoring runs for consensus via median (default: 1)",
+    )
+    parser.add_argument(
+        "--temperature", type=float, default=0.0,
+        help="Sampling temperature for the vision model (default: 0.0)",
+    )
+    parser.add_argument(
         "--format", choices=["text", "json"], default="text",
         help="Output format (default: text)",
     )
@@ -558,6 +687,8 @@ def main():
             concept_path=args.concept,
             threshold=args.threshold,
             model=args.model,
+            num_runs=args.runs,
+            temperature=args.temperature,
         )]
     elif args.render_dir and args.concept_dir:
         results = validate_render_batch(
@@ -565,6 +696,8 @@ def main():
             concept_dir=args.concept_dir,
             threshold=args.threshold,
             model=args.model,
+            num_runs=args.runs,
+            temperature=args.temperature,
         )
     else:
         parser.error(
