@@ -53,18 +53,20 @@ class ViperConfig:
 
     # Wing dimensions (per wing)
     WING_SPAN = 4.0          # Root to tip span
-    WING_CHORD_ROOT = 1.5    # Chord at root
-    WING_CHORD_TIP = 0.75    # Tip chord ~50% of root
-    WING_THICKNESS = 0.15
+    WING_CHORD_ROOT = 2.0    # Chord at root
+    WING_CHORD_TIP = 0.8     # Tip chord ~40% of root
+    WING_THICKNESS = 0.25
     WING_BEVEL_WIDTH = 0.01
     WING_SWEEP_BACK = 0.8    # Tips translated rearward
     WING_ATTACH_Y_FRAC = 0.6 # 60% back from nose
 
-    # Wing angles (degrees from horizontal, viewed from rear)
-    WING_ANGLE_UPPER_RIGHT = 30.0
-    WING_ANGLE_UPPER_LEFT = 150.0
-    WING_ANGLE_LOWER_RIGHT = -30.0
-    WING_ANGLE_LOWER_LEFT = -150.0
+    # Wing angles (degrees of Y-axis rotation in Blender)
+    # Blender's R_y(θ) gives X'=cos(θ)·X, Z'=-sin(θ)·X
+    # Reduced from ±30° to ±20° so wings stay closer to fuselage in side view
+    WING_ANGLE_UPPER_RIGHT = -20.0
+    WING_ANGLE_UPPER_LEFT = -160.0
+    WING_ANGLE_LOWER_RIGHT = 20.0
+    WING_ANGLE_LOWER_LEFT = 160.0
 
     # Cockpit
     COCKPIT_LENGTH = 2.0
@@ -77,20 +79,21 @@ class ViperConfig:
     WEAPON_BARREL_LENGTH = 2.5
     WEAPON_TIP_RADIUS = 0.08
 
-    # Engine nacelles
-    NACELLE_DIAMETER = 1.2
+    # Engine nacelles (reduced diameter to match concept art proportions)
+    NACELLE_DIAMETER = 0.85
     NACELLE_LENGTH = 4.0
-    NACELLE_SPACING = 1.5        # Center-to-center horizontal distance
-    NACELLE_EXTEND_BEYOND = 1.0  # How far rear extends beyond fuselage
+    NACELLE_SPACING = 1.2        # Center-to-center horizontal distance
+    NACELLE_EXTEND_BEYOND = 0.3  # How far rear extends beyond fuselage
     NOZZLE_MINOR_RADIUS = 0.06
     EXHAUST_RADIUS_FRAC = 0.9    # Fraction of nacelle radius
     INTAKE_MINOR_RADIUS = 0.05
     DETAIL_RING_MINOR_RADIUS = 0.03
+    NACELLE_VERTICAL_OFFSET = -0.2  # Slightly below fuselage centerline
 
     # Dorsal fin
     FIN_WIDTH = 0.06
     FIN_LENGTH = 2.0
-    FIN_HEIGHT = 0.8
+    FIN_HEIGHT = 1.2
     FIN_SWEEP_Y = 0.5    # Top edge shifted rearward
     FIN_TIP_SCALE = 0.5  # Top scaled to ~50% length
 
@@ -341,9 +344,7 @@ def create_wings():
         wing = bpy.context.active_object
         wing.name = wing_name
 
-        # Create wing as a flat slab extending in +X direction (span),
-        # chord along Y, thin in Z. We will rotate it around the Y axis later.
-        # Dimensions: span x chord x thickness
+        # Create wing as a flat slab: span along X, chord along Y, thin in Z
         wing.scale = (
             ViperConfig.WING_SPAN / 2,
             ViperConfig.WING_CHORD_ROOT / 2,
@@ -351,13 +352,20 @@ def create_wings():
         )
         bpy.ops.object.transform_apply(scale=True)
 
-        # Taper and sweep the wing tip in edit mode
+        # Edit mode: offset wing so root is at X=0 and tip at X=WING_SPAN,
+        # then taper and sweep the tip
         bpy.ops.object.mode_set(mode='EDIT')
         bm = bmesh.from_edit_mesh(wing.data)
 
-        # Tip verts are at the +X end (outboard edge)
         half_span = ViperConfig.WING_SPAN / 2
-        tip_verts = [v for v in bm.verts if v.co.x > half_span - 0.1]
+
+        # Shift all vertices so root edge is at X=0, tip at X=WING_SPAN
+        # (default cube after scale has verts at ±half_span)
+        for v in bm.verts:
+            v.co.x += half_span
+
+        # Tip verts are now at X near WING_SPAN
+        tip_verts = [v for v in bm.verts if v.co.x > ViperConfig.WING_SPAN - 0.1]
 
         taper_ratio = ViperConfig.WING_CHORD_TIP / ViperConfig.WING_CHORD_ROOT
         for vert in tip_verts:
@@ -369,11 +377,11 @@ def create_wings():
         bmesh.update_edit_mesh(wing.data)
         bpy.ops.object.mode_set(mode='OBJECT')
 
-        # Rotate wing around the longitudinal axis (Y-axis) to its X-config angle
-        # The angle is measured from horizontal in the XZ plane
+        # Rotate wing around Y-axis to its X-config angle
+        # R_y(θ): X'=cos(θ)·X, Z'=-sin(θ)·X
         wing.rotation_euler = (0, angle_rad, 0)
 
-        # Position at attachment point
+        # Position at attachment point on fuselage
         wing.location = (0, attach_y, 0)
 
         bpy.ops.object.transform_apply(rotation=True, location=False)
@@ -387,6 +395,73 @@ def create_wings():
 
     print("✓ Created 4 wings in X-configuration")
     return wings
+
+
+def create_wing_root_fairings():
+    """Create tapered connecting geometry between each wing root and the fuselage.
+
+    Each fairing is a wedge that bridges the visual gap at the wing-fuselage
+    junction, making the wings appear to grow out of the hull body.
+    """
+    fairings = []
+    attach_y = (
+        ViperConfig.HULL_LENGTH / 2
+        - ViperConfig.WING_ATTACH_Y_FRAC * ViperConfig.HULL_LENGTH
+    )
+
+    wing_configs = [
+        ("Fairing_Upper_Right", ViperConfig.WING_ANGLE_UPPER_RIGHT),
+        ("Fairing_Upper_Left", ViperConfig.WING_ANGLE_UPPER_LEFT),
+        ("Fairing_Lower_Right", ViperConfig.WING_ANGLE_LOWER_RIGHT),
+        ("Fairing_Lower_Left", ViperConfig.WING_ANGLE_LOWER_LEFT),
+    ]
+
+    # Fairing extends from fuselage center outward past the hull surface.
+    # It tapers from hull-sized at the root to wing-sized at the outer edge.
+    fairing_span = ViperConfig.HULL_WIDTH * 0.9  # Extends past hull surface
+    fairing_chord = ViperConfig.WING_CHORD_ROOT * 0.7
+    fairing_thickness = ViperConfig.HULL_HEIGHT * 0.35
+
+    for name, angle_deg in wing_configs:
+        angle_rad = math.radians(angle_deg)
+
+        bpy.ops.mesh.primitive_cube_add(size=1)
+        fairing = bpy.context.active_object
+        fairing.name = name
+
+        fairing.scale = (
+            fairing_span / 2,
+            fairing_chord / 2,
+            fairing_thickness / 2,
+        )
+        bpy.ops.object.transform_apply(scale=True)
+
+        # Edit mode: offset so root is at X=0 and taper outer edge
+        bpy.ops.object.mode_set(mode='EDIT')
+        bm = bmesh.from_edit_mesh(fairing.data)
+
+        half = fairing_span / 2
+        for v in bm.verts:
+            v.co.x += half  # Root at X=0, outer at X=fairing_span
+
+        # Taper outer edge to match wing profile
+        outer_verts = [v for v in bm.verts if v.co.x > fairing_span - 0.1]
+        for v in outer_verts:
+            v.co.y *= 0.6  # Narrow chord at outer edge
+            v.co.z *= 0.4  # Thin at outer edge to match wing thickness
+
+        bmesh.update_edit_mesh(fairing.data)
+        bpy.ops.object.mode_set(mode='OBJECT')
+
+        # Rotate to match wing angle and position at wing attachment
+        fairing.rotation_euler = (0, angle_rad, 0)
+        fairing.location = (0, attach_y, 0)
+        bpy.ops.object.transform_apply(rotation=True, location=False)
+
+        fairings.append(fairing)
+
+    print("✓ Created 4 wing root fairings")
+    return fairings
 
 
 def _get_wing_tip_positions():
@@ -406,9 +481,10 @@ def _get_wing_tip_positions():
     positions = []
     for name, angle_deg in wing_angles:
         angle_rad = math.radians(angle_deg)
-        # Wing tip is at local +X = WING_SPAN from wing origin after rotation
+        # Wing tip is at local +X = WING_SPAN from wing origin after Y-axis rotation
+        # Blender R_y(θ): X' = cos(θ)·X, Z' = -sin(θ)·X
         tip_x = ViperConfig.WING_SPAN * math.cos(angle_rad)
-        tip_z = ViperConfig.WING_SPAN * math.sin(angle_rad)
+        tip_z = -ViperConfig.WING_SPAN * math.sin(angle_rad)
         # The wing tip chord center Y is shifted back by half the sweep
         tip_y = attach_y - ViperConfig.WING_SWEEP_BACK / 2
         positions.append((Vector((tip_x, tip_y, tip_z)), name))
@@ -479,6 +555,8 @@ def create_engines():
     nacelle_rear_y = nacelle_center_y - ViperConfig.NACELLE_LENGTH / 2
     nacelle_front_y = nacelle_center_y + ViperConfig.NACELLE_LENGTH / 2
 
+    nacelle_z = ViperConfig.NACELLE_VERTICAL_OFFSET
+
     for side in [-1, 1]:
         side_name = "Right" if side > 0 else "Left"
         nacelle_x = side * ViperConfig.NACELLE_SPACING / 2
@@ -491,7 +569,7 @@ def create_engines():
         )
         body = bpy.context.active_object
         body.name = f"Nacelle_Body_{side_name}"
-        body.location = (nacelle_x, nacelle_center_y, 0)
+        body.location = (nacelle_x, nacelle_center_y, nacelle_z)
         body.rotation_euler = (math.pi / 2, 0, 0)
         bpy.ops.object.transform_apply(rotation=True)
         nacelles.append(body)
@@ -505,7 +583,7 @@ def create_engines():
         )
         nozzle = bpy.context.active_object
         nozzle.name = f"Nacelle_Nozzle_{side_name}"
-        nozzle.location = (nacelle_x, nacelle_rear_y, 0)
+        nozzle.location = (nacelle_x, nacelle_rear_y, nacelle_z)
         nozzle.rotation_euler = (math.pi / 2, 0, 0)
         bpy.ops.object.transform_apply(rotation=True)
         nacelles.append(nozzle)
@@ -519,44 +597,12 @@ def create_engines():
         )
         glow = bpy.context.active_object
         glow.name = f"Nacelle_Glow_{side_name}"
-        glow.location = (nacelle_x, nacelle_rear_y - 0.02, 0)
+        glow.location = (nacelle_x, nacelle_rear_y - 0.02, nacelle_z)
         glow.rotation_euler = (math.pi / 2, 0, 0)
         bpy.ops.object.transform_apply(rotation=True)
         nacelles.append(glow)
 
-        # Forward intake torus ring (slightly smaller than main body)
-        intake_major = nacelle_radius * 0.95
-        bpy.ops.mesh.primitive_torus_add(
-            major_radius=intake_major,
-            minor_radius=ViperConfig.INTAKE_MINOR_RADIUS,
-            major_segments=24,
-            minor_segments=8,
-        )
-        intake = bpy.context.active_object
-        intake.name = f"Nacelle_Intake_{side_name}"
-        intake.location = (nacelle_x, nacelle_front_y, 0)
-        intake.rotation_euler = (math.pi / 2, 0, 0)
-        bpy.ops.object.transform_apply(rotation=True)
-        nacelles.append(intake)
-
-        # Detail torus rings along nacelle length (3 rings)
-        detail_positions_frac = [0.3, 0.5, 0.7]
-        for i, frac in enumerate(detail_positions_frac):
-            ring_y = nacelle_rear_y + frac * ViperConfig.NACELLE_LENGTH
-            bpy.ops.mesh.primitive_torus_add(
-                major_radius=nacelle_radius + 0.01,
-                minor_radius=ViperConfig.DETAIL_RING_MINOR_RADIUS,
-                major_segments=24,
-                minor_segments=8,
-            )
-            ring = bpy.context.active_object
-            ring.name = f"Nacelle_Ring_{side_name}_{i}"
-            ring.location = (nacelle_x, ring_y, 0)
-            ring.rotation_euler = (math.pi / 2, 0, 0)
-            bpy.ops.object.transform_apply(rotation=True)
-            nacelles.append(ring)
-
-    print("✓ Created 2 engine nacelles with nozzles, glow, intakes, and detail rings")
+    print("✓ Created 2 engine nacelles with nozzles and glow")
     return nacelles
 
 
@@ -777,7 +823,7 @@ def setup_camera_and_lights():
     bpy.ops.object.light_add(type='AREA', location=(-15, 10, 5))
     fill = bpy.context.active_object
     fill.name = "Fill_Light"
-    fill.data.energy = 1.0
+    fill.data.energy = 1.5
     fill.data.size = 10
 
     return camera
@@ -816,11 +862,12 @@ def render_preview(fighter_obj, output_dir, hide_objects=None):
     world_corners = [fighter_obj.matrix_world @ Vector(c) for c in bbox]
     centre = sum(world_corners, Vector()) / len(world_corners)
 
-    # Use a narrower field of view for less perspective distortion
-    camera.data.lens = 85  # mm — portrait-style, less distortion
+    # Moderate telephoto lens
+    camera.data.lens = 85  # mm
 
-    # 3/4 view — elevated front-quarter angle, far enough for 12m ship
-    camera.location = (22, -30, 15)
+    # 3/4 view — front-quarter angle (like concept art hero.png)
+    # Camera in front of ship so nose is in foreground, nacelles in background
+    camera.location = (15, 20, 6)
     _point_camera_at(camera, centre)
 
     output_path = os.path.join(output_dir, "viper_fighter_3quarter.png")
@@ -828,10 +875,12 @@ def render_preview(fighter_obj, output_dir, hide_objects=None):
     bpy.ops.render.render(write_still=True)
     print(f"Rendered 3/4 view: {output_path}")
 
-    # Side view — camera along X axis (hull extends along Y)
+    # Side-profile view — right side, long telephoto matching concept art side.png
     while camera.constraints:
         camera.constraints.remove(camera.constraints[0])
-    camera.location = (35, 0, 3)
+    camera.data.type = 'PERSP'
+    camera.data.lens = 150  # Long telephoto for minimal distortion
+    camera.location = (30, 0, 2)  # True right side with minimal elevation
     _point_camera_at(camera, centre)
 
     output_path = os.path.join(output_dir, "viper_fighter_side.png")
