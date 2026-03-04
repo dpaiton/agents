@@ -1,0 +1,387 @@
+{
+  "metadata": {
+    "name": "Viper-Class Fighter",
+    "type": "Single-seat space fighter",
+    "style": "Star Wars / No Man's Sky inspired aggressive fighter",
+    "overview": "The Viper-class fighter is a single-seat combat spacecraft with an X-wing-inspired cruciform wing configuration.",
+    "based_on": "Fighter Ship v4 concept art (approved)"
+  },
+
+  "concept_art_references": [
+    {
+      "view": "hero_3_4",
+      "file": "projects/unity-space-sim/assets/drafts/fighter-v4/hero.png",
+      "key_features": ["4 wings in X", "2 large nacelles", "weapon barrels at wing tips", "angular fuselage"]
+    },
+    {
+      "view": "side_profile",
+      "file": "projects/unity-space-sim/assets/drafts/fighter-v4/side.png",
+      "key_features": ["thick fuselage", "single dorsal fin", "2 nacelles at rear", "angular cockpit canopy"]
+    },
+    {
+      "view": "top_down",
+      "file": "projects/unity-space-sim/assets/drafts/fighter-v4/top.png",
+      "key_features": ["4 wings clearly in X arrangement", "2 nacelles side-by-side", "4 weapon barrels"]
+    },
+    {
+      "view": "rear",
+      "file": "projects/unity-space-sim/assets/drafts/fighter-v4/rear.png",
+      "key_features": ["2 large engine nozzles with orange/red glow", "4 wings in X", "weapon barrels at tips"]
+    }
+  ],
+
+  "feature_checklist": [
+    {
+      "component": "Fuselage",
+      "count": 1,
+      "geometry_requirement": "Rectangular cross-section, beveled edges, tapered nose",
+      "concept_art_evidence": "All views: thick rectangular body"
+    },
+    {
+      "component": "Wings",
+      "count": 4,
+      "geometry_requirement": "Cruciform X-configuration (2 upper, 2 lower)",
+      "concept_art_evidence": "hero.png, top.png, rear.png"
+    },
+    {
+      "component": "Engine nacelles",
+      "count": 2,
+      "geometry_requirement": "Large cylinders, side-by-side, attached to rear fuselage",
+      "concept_art_evidence": "side.png, rear.png"
+    },
+    {
+      "component": "Weapon barrels",
+      "count": 4,
+      "geometry_requirement": "1 barrel per wing tip, extending forward",
+      "concept_art_evidence": "hero.png, top.png"
+    },
+    {
+      "component": "Cockpit canopy",
+      "count": 1,
+      "geometry_requirement": "Angular canopy on top of fuselage, forward 1/3",
+      "concept_art_evidence": "side.png, hero.png"
+    },
+    {
+      "component": "Dorsal fin",
+      "count": 1,
+      "geometry_requirement": "Single fin/antenna behind cockpit",
+      "concept_art_evidence": "side.png"
+    },
+    {
+      "component": "Chin guns",
+      "count": 0,
+      "geometry_requirement": "DO NOT INCLUDE",
+      "concept_art_evidence": "Not visible in any view"
+    },
+    {
+      "component": "Underslung turret",
+      "count": 0,
+      "geometry_requirement": "DO NOT INCLUDE",
+      "concept_art_evidence": "Not visible in any view"
+    }
+  ],
+
+  "physical_characteristics": {
+    "type": "Single-seat space fighter",
+    "style": "X-wing-inspired cruciform configuration",
+    "overall_dimensions": {
+      "width": 10.0,
+      "length": 12.0,
+      "height": 4.0
+    },
+    "fuselage_dimensions": {
+      "width": 2.5,
+      "length": 12.0,
+      "height": 1.8
+    },
+    "fuselage_cross_section": "rectangular_beveled",
+    "poly_budget": {
+      "lod0": 5000,
+      "lod1": 2000,
+      "lod2": 750
+    }
+  },
+
+  "proportions_reference": [
+    { "measurement": "Fuselage length",                        "ratio": 1.00, "absolute_meters": 12.0 },
+    { "measurement": "Fuselage width",                         "ratio": 0.21, "absolute_meters": 2.5  },
+    { "measurement": "Fuselage height",                        "ratio": 0.15, "absolute_meters": 1.8  },
+    { "measurement": "Wingspan (tip-to-tip)",                  "ratio": 0.83, "absolute_meters": 10.0 },
+    { "measurement": "Wing chord (root)",                      "ratio": 0.13, "absolute_meters": 1.5  },
+    { "measurement": "Wing chord (tip)",                       "ratio": 0.07, "absolute_meters": 0.8  },
+    { "measurement": "Wing span (single wing, root to tip)",   "ratio": 0.33, "absolute_meters": 4.0  },
+    { "measurement": "Nacelle length",                         "ratio": 0.33, "absolute_meters": 4.0  },
+    { "measurement": "Nacelle diameter",                       "ratio": 0.10, "absolute_meters": 1.2  },
+    { "measurement": "Weapon barrel length",                   "ratio": 0.21, "absolute_meters": 2.5  },
+    { "measurement": "Dorsal fin height",                      "ratio": 0.07, "absolute_meters": 0.8  }
+  ],
+
+  "geometry": [
+    {
+      "name": "Fuselage",
+      "count": 1,
+      "primitive": "cube",
+      "dimensions_box": { "width": 2.5, "length": 12.0, "height": 1.8 },
+      "tapers": [
+        { "face": "front", "scale_width": 0.4, "scale_height": 0.6 },
+        { "face": "rear",  "scale_width": 0.8 }
+      ],
+      "modifiers": [
+        { "type": "subdivision", "level": 1 },
+        { "type": "bevel", "width": 0.02 }
+      ],
+      "notes": "Rectangular cross-section with beveled edges. Subdivision level 1 keeps angular silhouette."
+    },
+    {
+      "name": "Wings",
+      "count": 4,
+      "primitive": "cube",
+      "dimensions_box": { "width": 4.0, "length": 1.5, "height": 0.15 },
+      "position": {
+        "attachment_point": "mid-fuselage",
+        "longitudinal_fraction": 0.6
+      },
+      "angular_offsets": [
+        { "label": "upper-right",  "angle_degrees":   30 },
+        { "label": "upper-left",   "angle_degrees":  150 },
+        { "label": "lower-right",  "angle_degrees":  -30 },
+        { "label": "lower-left",   "angle_degrees": -150 }
+      ],
+      "sweep": {
+        "target": "tips",
+        "offset": { "x": 0.0, "y": -0.8, "z": 0.0 }
+      },
+      "tapers": [
+        { "face": "front", "scale_width": 0.5 }
+      ],
+      "modifiers": [
+        { "type": "bevel", "width": 0.01 }
+      ],
+      "notes": "Cruciform X-configuration. Tip chord ~50% of root chord. Tips swept 0.8m rearward."
+    },
+    {
+      "name": "Engine nacelles",
+      "count": 2,
+      "primitive": "cylinder",
+      "dimensions_cylinder": { "radius": 0.6, "depth": 4.0 },
+      "position": {
+        "attachment_point": "fuselage_rear",
+        "offset": { "x": 0.75, "y": -1.0, "z": 0.0 }
+      },
+      "notes": "Side-by-side, horizontally centered. Nacelle centers ~1.5m apart. Rear extends ~1.0m beyond fuselage.",
+      "sub_components": [
+        {
+          "name": "Nacelle body",
+          "count": 1,
+          "primitive": "cylinder",
+          "dimensions_cylinder": { "radius": 0.6, "depth": 4.0 },
+          "notes": "Main cylinder body with dark panels material."
+        },
+        {
+          "name": "Rear nozzle ring",
+          "count": 1,
+          "primitive": "torus",
+          "major_radius": 0.6,
+          "minor_radius": 0.06,
+          "position": {
+            "attachment_point": "nacelle_rear"
+          },
+          "notes": "Torus at rear of nacelle."
+        },
+        {
+          "name": "Exhaust glow",
+          "count": 1,
+          "primitive": "circle",
+          "radius": 0.54,
+          "position": {
+            "attachment_point": "nacelle_rear"
+          },
+          "notes": "Circle fill (ngon), radius 0.9x nacelle radius, emission material."
+        },
+        {
+          "name": "Forward intake ring",
+          "count": 1,
+          "primitive": "torus",
+          "major_radius": 0.55,
+          "minor_radius": 0.05,
+          "position": {
+            "attachment_point": "nacelle_front"
+          },
+          "notes": "Slightly smaller than main body."
+        },
+        {
+          "name": "Detail rings",
+          "count": 3,
+          "primitive": "torus",
+          "major_radius": 0.6,
+          "minor_radius": 0.03,
+          "notes": "2-3 segmented detail rings along nacelle length."
+        }
+      ]
+    },
+    {
+      "name": "Weapon barrels",
+      "count": 4,
+      "primitive": "cylinder",
+      "dimensions_cylinder": { "radius": 0.06, "depth": 2.5 },
+      "position": {
+        "attachment_point": "wing_tip"
+      },
+      "notes": "Extends forward from each wing tip, parallel to fuselage longitudinal axis.",
+      "sub_components": [
+        {
+          "name": "Weapon tip sphere",
+          "count": 1,
+          "primitive": "sphere",
+          "radius": 0.08,
+          "position": {
+            "attachment_point": "barrel_forward_end"
+          },
+          "notes": "Small sphere at forward end with red emission material."
+        }
+      ]
+    },
+    {
+      "name": "Cockpit canopy",
+      "count": 1,
+      "primitive": "cube",
+      "dimensions_box": { "width": 0.6, "length": 2.0, "height": 0.35 },
+      "position": {
+        "attachment_point": "fuselage_top",
+        "longitudinal_fraction": 0.33
+      },
+      "tapers": [
+        { "face": "front", "scale_width": 0.4 }
+      ],
+      "modifiers": [
+        { "type": "subdivision", "level": 1 }
+      ],
+      "notes": "Angular canopy on top of fuselage, centered laterally, forward 1/3 of fuselage length."
+    },
+    {
+      "name": "Dorsal fin",
+      "count": 1,
+      "primitive": "cube",
+      "dimensions_box": { "width": 0.06, "length": 2.0, "height": 0.8 },
+      "position": {
+        "attachment_point": "fuselage_top",
+        "offset": { "x": 0.0, "y": 0.0, "z": 0.0 }
+      },
+      "sweep": {
+        "target": "top_edge",
+        "offset": { "x": 0.0, "y": -0.5, "z": 0.0 }
+      },
+      "tapers": [
+        { "face": "top", "scale_length": 0.5 }
+      ],
+      "notes": "Top of fuselage, directly behind cockpit. Top edge shifted 0.5m rearward. Tip tapered to 50% length."
+    }
+  ],
+
+  "materials": [
+    {
+      "name": "Hull",
+      "base_color": { "r": 0.32, "g": 0.34, "b": 0.36 },
+      "metallic": 0.4,
+      "roughness": 0.55,
+      "description": "Worn grey hull plating"
+    },
+    {
+      "name": "Dark Panels",
+      "base_color": { "r": 0.05, "g": 0.05, "b": 0.07 },
+      "metallic": 0.6,
+      "roughness": 0.7,
+      "description": "Engine nacelles and vents"
+    },
+    {
+      "name": "Gun Metal",
+      "base_color": { "r": 0.15, "g": 0.15, "b": 0.18 },
+      "metallic": 0.9,
+      "roughness": 0.35,
+      "description": "Weapon barrels"
+    },
+    {
+      "name": "Canopy Glass",
+      "base_color": { "r": 0.04, "g": 0.10, "b": 0.16 },
+      "metallic": 0.0,
+      "roughness": 0.05,
+      "alpha": 0.45,
+      "transmission": 0.8,
+      "description": "Dark tinted cockpit glass"
+    },
+    {
+      "name": "Engine Glow",
+      "base_color": { "r": 0.05, "g": 0.2, "b": 0.6 },
+      "metallic": 0.0,
+      "roughness": 0.0,
+      "emission": 5.0,
+      "description": "Blue engine exhaust emission"
+    },
+    {
+      "name": "Weapon Tips",
+      "base_color": { "r": 0.6, "g": 0.05, "b": 0.02 },
+      "metallic": 0.0,
+      "roughness": 0.0,
+      "emission": 3.0,
+      "description": "Red weapon tip emission"
+    },
+    {
+      "name": "Orange Accent",
+      "base_color": { "r": 0.65, "g": 0.22, "b": 0.04 },
+      "metallic": 0.2,
+      "roughness": 0.5,
+      "description": "Stripe accent details"
+    }
+  ],
+
+  "material_assignments": [
+    { "component": "Fuselage",              "primary_material": "Hull",         "secondary_material": null },
+    { "component": "Wings",                 "primary_material": "Hull",         "secondary_material": null },
+    { "component": "Engine nacelle bodies", "primary_material": "Dark Panels",  "secondary_material": null },
+    { "component": "Engine nozzle rings",   "primary_material": "Dark Panels",  "secondary_material": null },
+    { "component": "Engine exhaust glow",   "primary_material": "Engine Glow",  "secondary_material": null },
+    { "component": "Weapon barrels",        "primary_material": "Gun Metal",    "secondary_material": null },
+    { "component": "Weapon tip spheres",    "primary_material": "Weapon Tips",  "secondary_material": null },
+    { "component": "Cockpit canopy",        "primary_material": "Canopy Glass", "secondary_material": null },
+    { "component": "Dorsal fin",            "primary_material": "Hull",         "secondary_material": null }
+  ],
+
+  "lod_strategy": {
+    "method": "decimate",
+    "levels": [
+      { "level": 0, "target_triangles": 5000 },
+      { "level": 1, "target_triangles": 2000, "decimation_ratio": 0.40 },
+      { "level": 2, "target_triangles": 750,  "decimation_ratio": 0.15 }
+    ]
+  },
+
+  "generation_script": {
+    "location": "projects/unity-space-sim/blender/scripts/generate_viper_fighter.py",
+    "usage": [
+      "blender --background --python generate_viper_fighter.py",
+      "blender --background --python generate_viper_fighter.py -- --output-dir /path/to/output"
+    ],
+    "output_files": [
+      { "filename": "viper_fighter_LOD0.fbx", "description": "Main high-detail model" },
+      { "filename": "viper_fighter_LOD1.fbx", "description": "Medium distance version" },
+      { "filename": "viper_fighter_LOD2.fbx", "description": "Low detail for far distances" },
+      { "filename": "viper_fighter_3quarter.png", "description": "3/4 view render (compare against hero.png)" },
+      { "filename": "viper_fighter_side.png", "description": "Side profile render (compare against side.png)" }
+    ],
+    "validation": {
+      "command": "python projects/unity-space-sim/tools/validate_visual.py --render-dir assets/generated/viper-fighter/ --concept-dir assets/drafts/fighter-v4/ --threshold 0.75",
+      "threshold": 0.75
+    }
+  },
+
+  "required_script_changes": [
+    "Wings: Replace create_wings() (2 flat swept-back planes) with 4 wings in cruciform X-configuration at +/-30 degree angular offsets",
+    "Engines: Replace create_engines() (4 small quad cylinders) with 2 large cylindrical nacelles side-by-side",
+    "Remove: Delete create_chin_guns() -- not in concept art",
+    "Remove: Delete create_underslung_turret() -- not in concept art",
+    "Fuselage: Update ViperConfig dimensions from 14m x 2m x 1.4m to 12m x 2.5m x 1.8m",
+    "Fuselage subdivision: Keep at level 1 for angular silhouette",
+    "Update: apply_materials() for new component set (no turret/chin gun materials)",
+    "Update: join_fighter_parts() for new component dictionary"
+  ]
+}

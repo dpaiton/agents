@@ -196,6 +196,7 @@ def test_visual_fidelity():
             render_dir=str(render_dir),
             concept_dir=str(concept_dir),
             threshold=0.75,
+            num_runs=3,
         )
     except Exception as e:
         print(f"✗ Visual validation failed: {e}")

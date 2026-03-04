@@ -1,0 +1,584 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/dpaiton/agents/projects/unity-space-sim/docs/asset-spec-schema.json",
+  "title": "Spaceship Asset Specification",
+  "description": "Structured specification for procedural spaceship generation in Blender. Captures design intent from concept art into machine-readable geometry, materials, and LOD definitions.",
+  "type": "object",
+  "required": ["metadata", "physical_characteristics", "geometry", "materials", "material_assignments", "lod_strategy", "generation_script"],
+  "properties": {
+    "metadata": { "$ref": "#/$defs/metadata" },
+    "concept_art_references": {
+      "type": "array",
+      "description": "Reference images the model must match, one entry per view angle.",
+      "items": { "$ref": "#/$defs/concept_art_reference" }
+    },
+    "feature_checklist": {
+      "type": "array",
+      "description": "Exhaustive list of features that must (or must not) be present in the generated model.",
+      "items": { "$ref": "#/$defs/feature_checklist_entry" }
+    },
+    "physical_characteristics": { "$ref": "#/$defs/physical_characteristics" },
+    "proportions_reference": {
+      "type": "array",
+      "description": "Key ratios normalized to a reference dimension (typically fuselage length = 1.0).",
+      "items": { "$ref": "#/$defs/proportion_entry" }
+    },
+    "geometry": {
+      "type": "array",
+      "description": "Per-component geometry specifications.",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/component_geometry" }
+    },
+    "materials": {
+      "type": "array",
+      "description": "PBR material definitions used across the model.",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/pbr_material" }
+    },
+    "material_assignments": {
+      "type": "array",
+      "description": "Maps each component to its primary (and optional secondary) material.",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/material_assignment" }
+    },
+    "lod_strategy": { "$ref": "#/$defs/lod_strategy" },
+    "generation_script": { "$ref": "#/$defs/generation_script" },
+    "required_script_changes": {
+      "type": "array",
+      "description": "List of changes needed in the generation script to match this spec.",
+      "items": {
+        "type": "string",
+        "description": "A single required change description."
+      }
+    }
+  },
+  "additionalProperties": false,
+
+  "$defs": {
+    "vector3": {
+      "type": "object",
+      "description": "A 3D vector with named axes.",
+      "required": ["x", "y", "z"],
+      "properties": {
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "z": { "type": "number" }
+      },
+      "additionalProperties": false
+    },
+
+    "dimensions_box": {
+      "type": "object",
+      "description": "Box dimensions (width x length x height) in meters.",
+      "required": ["width", "length", "height"],
+      "properties": {
+        "width":  { "type": "number", "description": "Width in meters (X-axis)." },
+        "length": { "type": "number", "description": "Length in meters (Y-axis)." },
+        "height": { "type": "number", "description": "Height in meters (Z-axis)." }
+      },
+      "additionalProperties": false
+    },
+
+    "dimensions_cylinder": {
+      "type": "object",
+      "description": "Cylindrical dimensions in meters.",
+      "required": ["radius", "depth"],
+      "properties": {
+        "radius": { "type": "number", "description": "Radius in meters." },
+        "depth":  { "type": "number", "description": "Depth (length) in meters." }
+      },
+      "additionalProperties": false
+    },
+
+    "rgba_color": {
+      "type": "object",
+      "description": "RGBA color with channels in 0-1 range.",
+      "required": ["r", "g", "b"],
+      "properties": {
+        "r": { "type": "number", "minimum": 0, "maximum": 1 },
+        "g": { "type": "number", "minimum": 0, "maximum": 1 },
+        "b": { "type": "number", "minimum": 0, "maximum": 1 },
+        "a": { "type": "number", "minimum": 0, "maximum": 1, "default": 1.0, "description": "Alpha channel. Defaults to 1.0 (fully opaque)." }
+      },
+      "additionalProperties": false
+    },
+
+    "modifier": {
+      "type": "object",
+      "description": "A Blender modifier applied to geometry.",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["subdivision", "bevel", "decimate", "mirror", "array", "solidify"],
+          "description": "Blender modifier type."
+        },
+        "level": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Subdivision level (for subdivision modifier)."
+        },
+        "width": {
+          "type": "number",
+          "description": "Bevel width in meters (for bevel modifier)."
+        },
+        "ratio": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Decimation ratio (for decimate modifier)."
+        },
+        "segments": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of segments (for bevel modifier)."
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "taper": {
+      "type": "object",
+      "description": "Taper applied to a face of the primitive.",
+      "required": ["face"],
+      "properties": {
+        "face": {
+          "type": "string",
+          "enum": ["front", "rear", "top", "bottom", "left", "right"],
+          "description": "Which face to taper."
+        },
+        "scale_width": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Width scale factor (1.0 = no taper)."
+        },
+        "scale_height": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Height scale factor (1.0 = no taper)."
+        },
+        "scale_length": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Length scale factor (1.0 = no taper)."
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "sweep": {
+      "type": "object",
+      "description": "Translational offset applied to part of the geometry (e.g., swept-back wings).",
+      "properties": {
+        "target": {
+          "type": "string",
+          "description": "Which part is swept (e.g., 'tips', 'top_edge')."
+        },
+        "offset": { "$ref": "#/$defs/vector3", "description": "Translation offset in meters." }
+      },
+      "required": ["target", "offset"],
+      "additionalProperties": false
+    },
+
+    "position": {
+      "type": "object",
+      "description": "Position specification relative to a parent component.",
+      "properties": {
+        "attachment_point": {
+          "type": "string",
+          "description": "Semantic attachment location (e.g., 'mid-fuselage', 'wing_tip', 'fuselage_rear')."
+        },
+        "offset": { "$ref": "#/$defs/vector3", "description": "Offset from attachment point in meters." },
+        "longitudinal_fraction": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Fraction along the parent's length axis (0 = front, 1 = rear)."
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "component_geometry": {
+      "type": "object",
+      "description": "Geometry specification for a single component of the model.",
+      "required": ["name", "count", "primitive"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Human-readable component name."
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Number of instances of this component."
+        },
+        "primitive": {
+          "type": "string",
+          "enum": ["cube", "cylinder", "torus", "sphere", "circle"],
+          "description": "Base Blender primitive type."
+        },
+        "dimensions_box": { "$ref": "#/$defs/dimensions_box" },
+        "dimensions_cylinder": { "$ref": "#/$defs/dimensions_cylinder" },
+        "major_radius": {
+          "type": "number",
+          "description": "Major radius for torus primitives in meters."
+        },
+        "minor_radius": {
+          "type": "number",
+          "description": "Minor radius for torus primitives in meters."
+        },
+        "radius": {
+          "type": "number",
+          "description": "Radius for sphere or circle primitives in meters."
+        },
+        "position": { "$ref": "#/$defs/position" },
+        "rotation_degrees": {
+          "type": "object",
+          "description": "Rotation angles in degrees. Used for angular placement (e.g., wings at 30-degree offsets).",
+          "properties": {
+            "x": { "type": "number" },
+            "y": { "type": "number" },
+            "z": { "type": "number" }
+          },
+          "additionalProperties": false
+        },
+        "angular_offsets": {
+          "type": "array",
+          "description": "Per-instance angular offsets (e.g., 4 wings each at different angles). One entry per instance.",
+          "items": {
+            "type": "object",
+            "required": ["label", "angle_degrees"],
+            "properties": {
+              "label": { "type": "string", "description": "Instance label (e.g., 'upper-right')." },
+              "angle_degrees": { "type": "number", "description": "Angular offset from horizontal in degrees." }
+            },
+            "additionalProperties": false
+          }
+        },
+        "modifiers": {
+          "type": "array",
+          "description": "Blender modifiers applied to this component.",
+          "items": { "$ref": "#/$defs/modifier" }
+        },
+        "tapers": {
+          "type": "array",
+          "description": "Taper operations applied to faces of the primitive.",
+          "items": { "$ref": "#/$defs/taper" }
+        },
+        "sweep": { "$ref": "#/$defs/sweep" },
+        "sub_components": {
+          "type": "array",
+          "description": "Nested sub-components (e.g., nacelle body, nozzle ring, exhaust glow).",
+          "items": { "$ref": "#/$defs/component_geometry" }
+        },
+        "notes": {
+          "type": "string",
+          "description": "Free-form notes about this component."
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "pbr_material": {
+      "type": "object",
+      "description": "A PBR (Physically Based Rendering) material definition.",
+      "required": ["name", "base_color", "metallic", "roughness"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Material name for reference in assignments."
+        },
+        "base_color": { "$ref": "#/$defs/rgba_color" },
+        "metallic": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Metallic factor (0 = dielectric, 1 = metallic)."
+        },
+        "roughness": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Surface roughness (0 = mirror, 1 = fully rough)."
+        },
+        "emission": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Emission strength. 0 means no emission."
+        },
+        "alpha": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Alpha transparency (0 = fully transparent, 1 = fully opaque)."
+        },
+        "transmission": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Transmission factor for glass-like materials."
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of intended use."
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "material_assignment": {
+      "type": "object",
+      "description": "Maps a component to its materials.",
+      "required": ["component", "primary_material"],
+      "properties": {
+        "component": {
+          "type": "string",
+          "description": "Component name this assignment applies to."
+        },
+        "primary_material": {
+          "type": "string",
+          "description": "Name of the primary PBR material."
+        },
+        "secondary_material": {
+          "type": ["string", "null"],
+          "description": "Name of the secondary PBR material, or null if none."
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "lod_level": {
+      "type": "object",
+      "description": "A single LOD level specification.",
+      "required": ["level", "target_triangles"],
+      "properties": {
+        "level": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "LOD level number (0 = highest detail)."
+        },
+        "target_triangles": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Target triangle count for this LOD."
+        },
+        "decimation_ratio": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Blender Decimate modifier ratio (1.0 = original, lower = fewer triangles). Omit for LOD0."
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "lod_strategy": {
+      "type": "object",
+      "description": "Level-of-detail generation strategy.",
+      "required": ["method", "levels"],
+      "properties": {
+        "method": {
+          "type": "string",
+          "description": "LOD generation method (e.g., 'decimate').",
+          "enum": ["decimate", "manual", "simplygon"]
+        },
+        "levels": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/lod_level" }
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "metadata": {
+      "type": "object",
+      "description": "Top-level metadata about the asset.",
+      "required": ["name", "type"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Asset name (e.g., 'Viper-Class Fighter')."
+        },
+        "type": {
+          "type": "string",
+          "description": "Asset classification (e.g., 'Single-seat space fighter', 'Cargo freighter')."
+        },
+        "style": {
+          "type": "string",
+          "description": "Art direction style (e.g., 'Star Wars / No Man\\'s Sky inspired aggressive fighter')."
+        },
+        "overview": {
+          "type": "string",
+          "description": "Brief description of the asset."
+        },
+        "based_on": {
+          "type": "string",
+          "description": "Source material or concept art this asset is derived from."
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "concept_art_reference": {
+      "type": "object",
+      "description": "A single concept art reference image.",
+      "required": ["view", "file"],
+      "properties": {
+        "view": {
+          "type": "string",
+          "description": "View angle label (e.g., 'hero_3_4', 'side_profile', 'top_down', 'rear')."
+        },
+        "file": {
+          "type": "string",
+          "description": "Relative file path to the reference image."
+        },
+        "key_features": {
+          "type": "array",
+          "description": "Key features visible in this view.",
+          "items": { "type": "string" }
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "feature_checklist_entry": {
+      "type": "object",
+      "description": "A single feature that must or must not be present.",
+      "required": ["component", "count", "geometry_requirement"],
+      "properties": {
+        "component": {
+          "type": "string",
+          "description": "Feature/component name."
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Exact count required. 0 means DO NOT INCLUDE."
+        },
+        "geometry_requirement": {
+          "type": "string",
+          "description": "Description of geometry requirement, or 'DO NOT INCLUDE' for count=0."
+        },
+        "concept_art_evidence": {
+          "type": "string",
+          "description": "Which concept art views show evidence of this feature."
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "proportion_entry": {
+      "type": "object",
+      "description": "A proportion measurement normalized to a reference dimension.",
+      "required": ["measurement", "ratio"],
+      "properties": {
+        "measurement": {
+          "type": "string",
+          "description": "What is being measured (e.g., 'Fuselage width')."
+        },
+        "ratio": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Ratio normalized to reference dimension (typically fuselage length = 1.0)."
+        },
+        "absolute_meters": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Absolute value in meters at reference scale."
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "poly_budget": {
+      "type": "object",
+      "description": "Triangle count targets per LOD level.",
+      "required": ["lod0"],
+      "properties": {
+        "lod0": { "type": "integer", "minimum": 1, "description": "LOD0 triangle target." },
+        "lod1": { "type": "integer", "minimum": 1, "description": "LOD1 triangle target." },
+        "lod2": { "type": "integer", "minimum": 1, "description": "LOD2 triangle target." },
+        "lod3": { "type": "integer", "minimum": 1, "description": "LOD3 triangle target." }
+      },
+      "additionalProperties": false
+    },
+
+    "physical_characteristics": {
+      "type": "object",
+      "description": "Physical properties and dimensions of the asset.",
+      "required": ["overall_dimensions", "poly_budget"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "description": "Ship type classification."
+        },
+        "style": {
+          "type": "string",
+          "description": "Design style description."
+        },
+        "overall_dimensions": {
+          "$ref": "#/$defs/dimensions_box",
+          "description": "Bounding box dimensions in meters."
+        },
+        "fuselage_dimensions": {
+          "$ref": "#/$defs/dimensions_box",
+          "description": "Fuselage dimensions in meters."
+        },
+        "fuselage_cross_section": {
+          "type": "string",
+          "enum": ["rectangular_beveled", "circular", "elliptical", "hexagonal", "octagonal"],
+          "description": "Cross-sectional shape of the fuselage."
+        },
+        "poly_budget": {
+          "$ref": "#/$defs/poly_budget"
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "generation_script": {
+      "type": "object",
+      "description": "Metadata about the Blender generation script.",
+      "required": ["location"],
+      "properties": {
+        "location": {
+          "type": "string",
+          "description": "Relative path to the generation script."
+        },
+        "usage": {
+          "type": "array",
+          "description": "Example command-line invocations.",
+          "items": { "type": "string" }
+        },
+        "output_files": {
+          "type": "array",
+          "description": "List of files produced by the script.",
+          "items": {
+            "type": "object",
+            "required": ["filename", "description"],
+            "properties": {
+              "filename": { "type": "string" },
+              "description": { "type": "string" }
+            },
+            "additionalProperties": false
+          }
+        },
+        "validation": {
+          "type": "object",
+          "description": "Visual validation configuration.",
+          "properties": {
+            "command": { "type": "string", "description": "Validation command template." },
+            "threshold": { "type": "number", "minimum": 0, "maximum": 1, "description": "Similarity threshold." }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}
