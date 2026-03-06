@@ -395,7 +395,12 @@ class TestSyncDryRun:
     def test_dry_run_result_is_successful(self, make_comment):
         executor = ActionExecutor()
         for intent in CommentIntent:
-            comment = make_comment(f"Test {intent.value}", issue=42, pr=18)
+            # invoke_agent requires @agent-name: prefix to parse
+            if intent == CommentIntent.INVOKE_AGENT:
+                body = "@test-agent: Test invoke_agent"
+            else:
+                body = f"Test {intent.value}"
+            comment = make_comment(body, issue=42, pr=18)
             classified = ClassifiedComment(
                 comment=comment,
                 intent=intent,

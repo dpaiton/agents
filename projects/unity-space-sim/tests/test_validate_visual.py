@@ -9,7 +9,8 @@ import json
 import statistics
 import sys
 from pathlib import Path
-from unittest.mock import patch
+
+from orchestration.rubrics import VISUAL_FIDELITY_RUBRIC
 
 import pytest
 
@@ -23,13 +24,12 @@ _TOOLS_DIR = Path(__file__).resolve().parents[1] / "tools"
 if str(_TOOLS_DIR) not in sys.path:
     sys.path.insert(0, str(_TOOLS_DIR))
 
-from validate_visual import (
+from validate_visual import (  # noqa: E402
     CriterionResult,
     ValidationResult,
     aggregate_criterion_scores,
     parse_vision_response,
 )
-from orchestration.rubrics import VISUAL_FIDELITY_RUBRIC
 
 
 # ---------------------------------------------------------------------------

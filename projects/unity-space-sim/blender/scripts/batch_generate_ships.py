@@ -16,7 +16,6 @@ Requirements:
     - generate_basic_spaceship.py in same directory
 """
 
-import bpy
 import sys
 import os
 import argparse
@@ -174,16 +173,16 @@ def print_generation_summary(results: dict):
     print(f"Average time per variant: {results['total_generation_time']/max(len(results['variants']), 1):.1f} seconds")
 
     validation = results['validation_summary']
-    print(f"\nValidation Results:")
+    print("\nValidation Results:")
     print(f"  ✓ Passed: {validation['passed']}")
     print(f"  ✗ Failed: {validation['failed']}")
 
     if validation['warnings']:
-        print(f"\nWarnings:")
+        print("\nWarnings:")
         for warning in validation['warnings']:
             print(f"  ⚠ {warning}")
 
-    print(f"\nGenerated Variants:")
+    print("\nGenerated Variants:")
     for variant in results['variants']:
         status = "✓" if variant['triangle_budget_ok'] else "⚠"
         print(f"  {status} {variant['variant_name']:15} {variant['triangle_count']:5} tri  {variant['generation_time']:4.1f}s")
