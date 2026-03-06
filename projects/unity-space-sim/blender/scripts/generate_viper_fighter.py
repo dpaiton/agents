@@ -32,7 +32,6 @@ import math
 import os
 import sys
 import argparse
-from pathlib import Path
 from mathutils import Vector
 
 # ==================== Configuration ====================
@@ -553,7 +552,6 @@ def create_engines():
     nacelle_center_y = fuselage_rear_y - ViperConfig.NACELLE_EXTEND_BEYOND + ViperConfig.NACELLE_LENGTH / 2
 
     nacelle_rear_y = nacelle_center_y - ViperConfig.NACELLE_LENGTH / 2
-    nacelle_front_y = nacelle_center_y + ViperConfig.NACELLE_LENGTH / 2
 
     nacelle_z = ViperConfig.NACELLE_VERTICAL_OFFSET
 

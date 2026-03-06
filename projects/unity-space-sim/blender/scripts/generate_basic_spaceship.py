@@ -18,8 +18,6 @@ Requirements:
 """
 
 import bpy
-import bmesh
-import mathutils
 import sys
 import argparse
 import os
@@ -298,10 +296,6 @@ def validate_asset(obj: bpy.types.Object, max_triangles: int,
     dims = obj.dimensions
     actual_dimensions = (dims.x, dims.y, dims.z)
 
-    # Get bounding box for scale validation
-    bbox_corners = [obj.matrix_world @ mathutils.Vector(corner) for corner in obj.bound_box]
-    bbox_size = max(bbox_corners) - min(bbox_corners)
-
     validation_results = {
         'triangle_count': triangle_count,
         'max_triangles': max_triangles,
@@ -414,7 +408,7 @@ def main():
         expected_dimensions=(params['length'], params['width'], params['height'])
     )
 
-    print(f"Validation Results:")
+    print("Validation Results:")
     print(f"  Triangle count: {validation['triangle_count']}/{validation['max_triangles']}")
     print(f"  Budget OK: {validation['triangle_budget_ok']}")
     print(f"  Dimensions: {validation['actual_dimensions']}")

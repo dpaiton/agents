@@ -20,7 +20,6 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "scripts"))
 
 try:
     import bpy
-    import bmesh
     from generate_basic_spaceship import (
         clear_scene,
         create_basic_spaceship_geometry,
@@ -153,7 +152,6 @@ class TestLODGeneration:
     def test_generate_lods(self):
         """Test LOD generation produces multiple detail levels."""
         ship = create_basic_spaceship_geometry("cargo", 15.0, 8.0, 5.0)
-        original_tri_count = len(ship.data.polygons)
 
         lods = generate_lods(ship, lod1_ratio=0.5, lod2_ratio=0.25)
 

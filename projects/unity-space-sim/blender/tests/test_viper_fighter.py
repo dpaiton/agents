@@ -16,7 +16,6 @@ Run with:
 import os
 import sys
 import subprocess
-import json
 from pathlib import Path
 
 # Add parent directory to path
@@ -140,7 +139,7 @@ validate_fighter(test_obj, "LOD0")
         return True
 
     except subprocess.CalledProcessError as e:
-        print(f"✗ Validation test failed")
+        print("✗ Validation test failed")
         print(e.stdout)
         print(e.stderr)
         temp_script.unlink()  # Clean up
@@ -245,7 +244,7 @@ def main():
     print(f"  Validation Test: {'✓ PASS' if validation_ok else '✗ FAIL'}")
     print(f"  Generation Test: {'✓ PASS' if generation_ok else '✗ FAIL'}")
     if visual_result is None:
-        print(f"  Visual Fidelity: ⊘ SKIPPED")
+        print("  Visual Fidelity: ⊘ SKIPPED")
     else:
         print(f"  Visual Fidelity: {'✓ PASS' if visual_result else '✗ FAIL'}")
 
