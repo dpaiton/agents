@@ -107,13 +107,13 @@
     { "measurement": "Fuselage width",                         "ratio": 0.21, "absolute_meters": 2.5  },
     { "measurement": "Fuselage height",                        "ratio": 0.15, "absolute_meters": 1.8  },
     { "measurement": "Wingspan (tip-to-tip)",                  "ratio": 0.83, "absolute_meters": 10.0 },
-    { "measurement": "Wing chord (root)",                      "ratio": 0.13, "absolute_meters": 1.5  },
+    { "measurement": "Wing chord (root)",                      "ratio": 0.17, "absolute_meters": 2.0  },
     { "measurement": "Wing chord (tip)",                       "ratio": 0.07, "absolute_meters": 0.8  },
     { "measurement": "Wing span (single wing, root to tip)",   "ratio": 0.33, "absolute_meters": 4.0  },
     { "measurement": "Nacelle length",                         "ratio": 0.33, "absolute_meters": 4.0  },
-    { "measurement": "Nacelle diameter",                       "ratio": 0.10, "absolute_meters": 1.2  },
+    { "measurement": "Nacelle diameter",                       "ratio": 0.07, "absolute_meters": 0.85 },
     { "measurement": "Weapon barrel length",                   "ratio": 0.21, "absolute_meters": 2.5  },
-    { "measurement": "Dorsal fin height",                      "ratio": 0.07, "absolute_meters": 0.8  }
+    { "measurement": "Dorsal fin height",                      "ratio": 0.10, "absolute_meters": 1.2  }
   ],
 
   "geometry": [
@@ -136,16 +136,16 @@
       "name": "Wings",
       "count": 4,
       "primitive": "cube",
-      "dimensions_box": { "width": 4.0, "length": 1.5, "height": 0.15 },
+      "dimensions_box": { "width": 4.0, "length": 2.0, "height": 0.25 },
       "position": {
         "attachment_point": "mid-fuselage",
         "longitudinal_fraction": 0.6
       },
       "angular_offsets": [
-        { "label": "upper-right",  "angle_degrees":   30 },
-        { "label": "upper-left",   "angle_degrees":  150 },
-        { "label": "lower-right",  "angle_degrees":  -30 },
-        { "label": "lower-left",   "angle_degrees": -150 }
+        { "label": "upper-right",  "angle_degrees":  -20 },
+        { "label": "upper-left",   "angle_degrees": -160 },
+        { "label": "lower-right",  "angle_degrees":   20 },
+        { "label": "lower-left",   "angle_degrees":  160 }
       ],
       "sweep": {
         "target": "tips",
@@ -163,25 +163,25 @@
       "name": "Engine nacelles",
       "count": 2,
       "primitive": "cylinder",
-      "dimensions_cylinder": { "radius": 0.6, "depth": 4.0 },
+      "dimensions_cylinder": { "radius": 0.425, "depth": 4.0 },
       "position": {
         "attachment_point": "fuselage_rear",
-        "offset": { "x": 0.75, "y": -1.0, "z": 0.0 }
+        "offset": { "x": 0.6, "y": -0.3, "z": -0.2 }
       },
-      "notes": "Side-by-side, horizontally centered. Nacelle centers ~1.5m apart. Rear extends ~1.0m beyond fuselage.",
+      "notes": "Side-by-side, horizontally centered. Nacelle centers ~1.2m apart. Rear extends ~0.3m beyond fuselage. Slightly below fuselage centerline.",
       "sub_components": [
         {
           "name": "Nacelle body",
           "count": 1,
           "primitive": "cylinder",
-          "dimensions_cylinder": { "radius": 0.6, "depth": 4.0 },
+          "dimensions_cylinder": { "radius": 0.425, "depth": 4.0 },
           "notes": "Main cylinder body with dark panels material."
         },
         {
           "name": "Rear nozzle ring",
           "count": 1,
           "primitive": "torus",
-          "major_radius": 0.6,
+          "major_radius": 0.425,
           "minor_radius": 0.06,
           "position": {
             "attachment_point": "nacelle_rear"
@@ -192,7 +192,7 @@
           "name": "Exhaust glow",
           "count": 1,
           "primitive": "circle",
-          "radius": 0.54,
+          "radius": 0.3825,
           "position": {
             "attachment_point": "nacelle_rear"
           },
@@ -202,7 +202,7 @@
           "name": "Forward intake ring",
           "count": 1,
           "primitive": "torus",
-          "major_radius": 0.55,
+          "major_radius": 0.375,
           "minor_radius": 0.05,
           "position": {
             "attachment_point": "nacelle_front"
@@ -213,7 +213,7 @@
           "name": "Detail rings",
           "count": 3,
           "primitive": "torus",
-          "major_radius": 0.6,
+          "major_radius": 0.425,
           "minor_radius": 0.03,
           "notes": "2-3 segmented detail rings along nacelle length."
         }
@@ -262,7 +262,7 @@
       "name": "Dorsal fin",
       "count": 1,
       "primitive": "cube",
-      "dimensions_box": { "width": 0.06, "length": 2.0, "height": 0.8 },
+      "dimensions_box": { "width": 0.06, "length": 2.0, "height": 1.2 },
       "position": {
         "attachment_point": "fuselage_top",
         "offset": { "x": 0.0, "y": 0.0, "z": 0.0 }
@@ -359,7 +359,8 @@
     "location": "projects/unity-space-sim/blender/scripts/generate_viper_fighter.py",
     "usage": [
       "blender --background --python generate_viper_fighter.py",
-      "blender --background --python generate_viper_fighter.py -- --output-dir /path/to/output"
+      "blender --background --python generate_viper_fighter.py -- --output-dir /path/to/output",
+      "blender --background --python generate_viper_fighter.py -- --spec blender/specs/viper_fighter.json"
     ],
     "output_files": [
       { "filename": "viper_fighter_LOD0.fbx", "description": "Main high-detail model" },

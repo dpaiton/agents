@@ -17,6 +17,7 @@ Based on approved Fighter Ship v4 concept art (4 reference views).
 Usage:
     blender --background --python generate_viper_fighter.py
     blender --background --python generate_viper_fighter.py -- --output-dir /custom/path
+    blender --background --python generate_viper_fighter.py -- --spec path/to/spec.json
 
 Outputs:
     - viper_fighter_LOD0.fbx (main geometry ~5k tris)
@@ -28,97 +29,99 @@ Outputs:
 
 import bpy
 import bmesh
+import json
 import math
 import os
 import sys
 import argparse
+from dataclasses import dataclass, field
 from mathutils import Vector
 
 # ==================== Configuration ====================
 
+
+@dataclass
 class ViperConfig:
     """Configuration for Viper-class fighter based on approved design."""
 
     # Dimensions (meters)
-    HULL_LENGTH = 12.0
-    HULL_WIDTH = 2.5
-    HULL_HEIGHT = 1.8
+    hull_length: float = 12.0
+    hull_width: float = 2.5
+    hull_height: float = 1.8
 
     # Hull taper
-    HULL_FRONT_TAPER_WIDTH = 0.4   # Front face scaled to ~40% width
-    HULL_FRONT_TAPER_HEIGHT = 0.6  # Front face scaled to ~60% height
-    HULL_REAR_TAPER_WIDTH = 0.8    # Rear face scaled to ~80% width
-    HULL_BEVEL_WIDTH = 0.02        # Cross-section bevel width
+    hull_front_taper_width: float = 0.4
+    hull_front_taper_height: float = 0.6
+    hull_rear_taper_width: float = 0.8
+    hull_bevel_width: float = 0.02
 
     # Wing dimensions (per wing)
-    WING_SPAN = 4.0          # Root to tip span
-    WING_CHORD_ROOT = 2.0    # Chord at root
-    WING_CHORD_TIP = 0.8     # Tip chord ~40% of root
-    WING_THICKNESS = 0.25
-    WING_BEVEL_WIDTH = 0.01
-    WING_SWEEP_BACK = 0.8    # Tips translated rearward
-    WING_ATTACH_Y_FRAC = 0.6 # 60% back from nose
+    wing_span: float = 4.0
+    wing_chord_root: float = 2.0
+    wing_chord_tip: float = 0.8
+    wing_thickness: float = 0.25
+    wing_bevel_width: float = 0.01
+    wing_sweep_back: float = 0.8
+    wing_attach_y_frac: float = 0.6
 
     # Wing angles (degrees of Y-axis rotation in Blender)
-    # Blender's R_y(θ) gives X'=cos(θ)·X, Z'=-sin(θ)·X
-    # Reduced from ±30° to ±20° so wings stay closer to fuselage in side view
-    WING_ANGLE_UPPER_RIGHT = -20.0
-    WING_ANGLE_UPPER_LEFT = -160.0
-    WING_ANGLE_LOWER_RIGHT = 20.0
-    WING_ANGLE_LOWER_LEFT = 160.0
+    wing_angle_upper_right: float = -20.0
+    wing_angle_upper_left: float = -160.0
+    wing_angle_lower_right: float = 20.0
+    wing_angle_lower_left: float = 160.0
 
     # Cockpit
-    COCKPIT_LENGTH = 2.0
-    COCKPIT_WIDTH = 0.6
-    COCKPIT_HEIGHT = 0.35
-    COCKPIT_TAPER = 0.4  # Front taper ~40% width
+    cockpit_length: float = 2.0
+    cockpit_width: float = 0.6
+    cockpit_height: float = 0.35
+    cockpit_taper: float = 0.4
 
     # Weapon barrels (one per wing tip)
-    WEAPON_BARREL_RADIUS = 0.06
-    WEAPON_BARREL_LENGTH = 2.5
-    WEAPON_TIP_RADIUS = 0.08
+    weapon_barrel_radius: float = 0.06
+    weapon_barrel_length: float = 2.5
+    weapon_tip_radius: float = 0.08
 
-    # Engine nacelles (reduced diameter to match concept art proportions)
-    NACELLE_DIAMETER = 0.85
-    NACELLE_LENGTH = 4.0
-    NACELLE_SPACING = 1.2        # Center-to-center horizontal distance
-    NACELLE_EXTEND_BEYOND = 0.3  # How far rear extends beyond fuselage
-    NOZZLE_MINOR_RADIUS = 0.06
-    EXHAUST_RADIUS_FRAC = 0.9    # Fraction of nacelle radius
-    INTAKE_MINOR_RADIUS = 0.05
-    DETAIL_RING_MINOR_RADIUS = 0.03
-    NACELLE_VERTICAL_OFFSET = -0.2  # Slightly below fuselage centerline
+    # Engine nacelles
+    nacelle_diameter: float = 0.85
+    nacelle_length: float = 4.0
+    nacelle_spacing: float = 1.2
+    nacelle_extend_beyond: float = 0.3
+    nozzle_minor_radius: float = 0.06
+    exhaust_radius_frac: float = 0.9
+    intake_minor_radius: float = 0.05
+    detail_ring_minor_radius: float = 0.03
+    nacelle_vertical_offset: float = -0.2
 
     # Dorsal fin
-    FIN_WIDTH = 0.06
-    FIN_LENGTH = 2.0
-    FIN_HEIGHT = 1.2
-    FIN_SWEEP_Y = 0.5    # Top edge shifted rearward
-    FIN_TIP_SCALE = 0.5  # Top scaled to ~50% length
+    fin_width: float = 0.06
+    fin_length: float = 2.0
+    fin_height: float = 1.2
+    fin_sweep_y: float = 0.5
+    fin_tip_scale: float = 0.5
 
     # Materials (RGB values from spec)
-    MATERIALS = {
+    materials: dict = field(default_factory=lambda: {
         'hull': {
             'name': 'Fighter_Hull',
-            'color': (0.32, 0.34, 0.36, 1.0),  # Worn grey
+            'color': (0.32, 0.34, 0.36, 1.0),
             'metallic': 0.4,
             'roughness': 0.55
         },
         'dark_panels': {
             'name': 'Dark_Panels',
-            'color': (0.05, 0.05, 0.07, 1.0),  # Engine/vent areas
+            'color': (0.05, 0.05, 0.07, 1.0),
             'metallic': 0.6,
             'roughness': 0.7
         },
         'gun_metal': {
             'name': 'Gun_Metal',
-            'color': (0.15, 0.15, 0.18, 1.0),  # Weapons
+            'color': (0.15, 0.15, 0.18, 1.0),
             'metallic': 0.9,
             'roughness': 0.35
         },
         'canopy': {
             'name': 'Canopy_Glass',
-            'color': (0.04, 0.10, 0.16, 1.0),  # Dark tinted
+            'color': (0.04, 0.10, 0.16, 1.0),
             'metallic': 0.0,
             'roughness': 0.05,
             'alpha': 0.45,
@@ -126,32 +129,220 @@ class ViperConfig:
         },
         'engine_glow': {
             'name': 'Engine_Glow',
-            'color': (0.05, 0.2, 0.6, 1.0),  # Blue emission
+            'color': (0.05, 0.2, 0.6, 1.0),
             'metallic': 0.0,
             'roughness': 0.0,
             'emission': 5.0
         },
         'weapon_tips': {
             'name': 'Weapon_Tips',
-            'color': (0.6, 0.05, 0.02, 1.0),  # Red emission
+            'color': (0.6, 0.05, 0.02, 1.0),
             'metallic': 0.0,
             'roughness': 0.0,
             'emission': 3.0
         },
         'accent': {
             'name': 'Orange_Accent',
-            'color': (0.65, 0.22, 0.04, 1.0),  # Orange stripes
+            'color': (0.65, 0.22, 0.04, 1.0),
             'metallic': 0.2,
             'roughness': 0.5
         }
-    }
+    })
 
     # Target poly counts
-    POLY_BUDGETS = {
+    poly_budgets: dict = field(default_factory=lambda: {
         'LOD0': 5000,
         'LOD1': 2000,
         'LOD2': 750
+    })
+
+
+def load_spec(spec_path):
+    """Load a ViperConfig from a JSON asset spec file.
+
+    Maps spec fields to dataclass attributes. Falls back to defaults
+    for any fields not present in the spec.
+    """
+    with open(spec_path) as f:
+        spec = json.load(f)
+
+    kwargs = {}
+
+    # Physical characteristics / fuselage dimensions
+    phys = spec.get("physical_characteristics", {})
+    fuse = phys.get("fuselage_dimensions", {})
+    if fuse:
+        kwargs["hull_length"] = fuse.get("length", ViperConfig.hull_length)
+        kwargs["hull_width"] = fuse.get("width", ViperConfig.hull_width)
+        kwargs["hull_height"] = fuse.get("height", ViperConfig.hull_height)
+
+    # Geometry components
+    geom_list = spec.get("geometry", [])
+    geom_by_name = {g["name"]: g for g in geom_list}
+
+    # Fuselage tapers
+    fuselage = geom_by_name.get("Fuselage", {})
+    for taper in fuselage.get("tapers", []):
+        if taper["face"] == "front":
+            if "scale_width" in taper:
+                kwargs["hull_front_taper_width"] = taper["scale_width"]
+            if "scale_height" in taper:
+                kwargs["hull_front_taper_height"] = taper["scale_height"]
+        elif taper["face"] == "rear":
+            if "scale_width" in taper:
+                kwargs["hull_rear_taper_width"] = taper["scale_width"]
+    for mod in fuselage.get("modifiers", []):
+        if mod["type"] == "bevel" and "width" in mod:
+            kwargs["hull_bevel_width"] = mod["width"]
+
+    # Wings
+    wings = geom_by_name.get("Wings", {})
+    dims = wings.get("dimensions_box", {})
+    if dims:
+        kwargs["wing_span"] = dims.get("width", ViperConfig.wing_span)
+        kwargs["wing_chord_root"] = dims.get("length", ViperConfig.wing_chord_root)
+        kwargs["wing_thickness"] = dims.get("height", ViperConfig.wing_thickness)
+
+    pos = wings.get("position", {})
+    if "longitudinal_fraction" in pos:
+        kwargs["wing_attach_y_frac"] = pos["longitudinal_fraction"]
+
+    angular = wings.get("angular_offsets", [])
+    angle_map = {
+        "upper-right": "wing_angle_upper_right",
+        "upper-left": "wing_angle_upper_left",
+        "lower-right": "wing_angle_lower_right",
+        "lower-left": "wing_angle_lower_left",
     }
+    for entry in angular:
+        attr = angle_map.get(entry.get("label"))
+        if attr:
+            kwargs[attr] = entry["angle_degrees"]
+
+    sweep = wings.get("sweep", {})
+    sweep_offset = sweep.get("offset", {})
+    if "y" in sweep_offset:
+        kwargs["wing_sweep_back"] = abs(sweep_offset["y"])
+
+    for taper in wings.get("tapers", []):
+        if taper["face"] == "front" and "scale_width" in taper:
+            # Tip chord = root chord * taper scale
+            kwargs["wing_chord_tip"] = kwargs.get(
+                "wing_chord_root", ViperConfig.wing_chord_root
+            ) * taper["scale_width"]
+
+    for mod in wings.get("modifiers", []):
+        if mod["type"] == "bevel" and "width" in mod:
+            kwargs["wing_bevel_width"] = mod["width"]
+
+    # Engine nacelles
+    nacelles = geom_by_name.get("Engine nacelles", {})
+    nac_dims = nacelles.get("dimensions_cylinder", {})
+    if nac_dims:
+        kwargs["nacelle_diameter"] = nac_dims.get("radius", 0.425) * 2
+        kwargs["nacelle_length"] = nac_dims.get("depth", ViperConfig.nacelle_length)
+
+    nac_pos = nacelles.get("position", {})
+    nac_offset = nac_pos.get("offset", {})
+    if nac_offset:
+        kwargs["nacelle_spacing"] = abs(nac_offset.get("x", 0.6)) * 2
+        kwargs["nacelle_extend_beyond"] = abs(nac_offset.get("y", 0.3))
+        kwargs["nacelle_vertical_offset"] = nac_offset.get("z", -0.2)
+
+    # Nacelle sub-component radii
+    for sub in nacelles.get("sub_components", []):
+        if sub["name"] == "Rear nozzle ring" and "minor_radius" in sub:
+            kwargs["nozzle_minor_radius"] = sub["minor_radius"]
+        elif sub["name"] == "Exhaust glow" and "radius" in sub:
+            nac_r = nac_dims.get("radius", 0.425)
+            if nac_r > 0:
+                kwargs["exhaust_radius_frac"] = sub["radius"] / nac_r
+        elif sub["name"] == "Forward intake ring" and "minor_radius" in sub:
+            kwargs["intake_minor_radius"] = sub["minor_radius"]
+        elif sub["name"] == "Detail rings" and "minor_radius" in sub:
+            kwargs["detail_ring_minor_radius"] = sub["minor_radius"]
+
+    # Cockpit canopy
+    canopy = geom_by_name.get("Cockpit canopy", {})
+    can_dims = canopy.get("dimensions_box", {})
+    if can_dims:
+        kwargs["cockpit_length"] = can_dims.get("length", ViperConfig.cockpit_length)
+        kwargs["cockpit_width"] = can_dims.get("width", ViperConfig.cockpit_width)
+        kwargs["cockpit_height"] = can_dims.get("height", ViperConfig.cockpit_height)
+    for taper in canopy.get("tapers", []):
+        if taper["face"] == "front" and "scale_width" in taper:
+            kwargs["cockpit_taper"] = taper["scale_width"]
+
+    # Weapon barrels
+    weapons = geom_by_name.get("Weapon barrels", {})
+    wep_dims = weapons.get("dimensions_cylinder", {})
+    if wep_dims:
+        kwargs["weapon_barrel_radius"] = wep_dims.get("radius", ViperConfig.weapon_barrel_radius)
+        kwargs["weapon_barrel_length"] = wep_dims.get("depth", ViperConfig.weapon_barrel_length)
+    for sub in weapons.get("sub_components", []):
+        if sub["name"] == "Weapon tip sphere" and "radius" in sub:
+            kwargs["weapon_tip_radius"] = sub["radius"]
+
+    # Dorsal fin
+    fin = geom_by_name.get("Dorsal fin", {})
+    fin_dims = fin.get("dimensions_box", {})
+    if fin_dims:
+        kwargs["fin_width"] = fin_dims.get("width", ViperConfig.fin_width)
+        kwargs["fin_length"] = fin_dims.get("length", ViperConfig.fin_length)
+        kwargs["fin_height"] = fin_dims.get("height", ViperConfig.fin_height)
+    fin_sweep = fin.get("sweep", {})
+    fin_sweep_offset = fin_sweep.get("offset", {})
+    if "y" in fin_sweep_offset:
+        kwargs["fin_sweep_y"] = abs(fin_sweep_offset["y"])
+    for taper in fin.get("tapers", []):
+        if taper["face"] == "top" and "scale_length" in taper:
+            kwargs["fin_tip_scale"] = taper["scale_length"]
+
+    # Poly budgets
+    poly = phys.get("poly_budget", {})
+    if poly:
+        kwargs["poly_budgets"] = {
+            'LOD0': poly.get("lod0", 5000),
+            'LOD1': poly.get("lod1", 2000),
+            'LOD2': poly.get("lod2", 750),
+        }
+
+    # Materials
+    mat_list = spec.get("materials", [])
+    if mat_list:
+        # Map spec material names to config keys
+        name_to_key = {
+            "Hull": "hull",
+            "Dark Panels": "dark_panels",
+            "Gun Metal": "gun_metal",
+            "Canopy Glass": "canopy",
+            "Engine Glow": "engine_glow",
+            "Weapon Tips": "weapon_tips",
+            "Orange Accent": "accent",
+        }
+        mats = {}
+        for mat in mat_list:
+            key = name_to_key.get(mat["name"])
+            if not key:
+                continue
+            bc = mat["base_color"]
+            mat_dict = {
+                "name": mat["name"].replace(" ", "_"),
+                "color": (bc["r"], bc["g"], bc["b"], 1.0),
+                "metallic": mat["metallic"],
+                "roughness": mat["roughness"],
+            }
+            if "alpha" in mat:
+                mat_dict["alpha"] = mat["alpha"]
+            if "transmission" in mat:
+                mat_dict["transmission"] = mat["transmission"]
+            if "emission" in mat:
+                mat_dict["emission"] = mat["emission"]
+            mats[key] = mat_dict
+        if mats:
+            kwargs["materials"] = mats
+
+    return ViperConfig(**kwargs)
 
 
 # ==================== Utility Functions ====================
@@ -217,10 +408,10 @@ def create_material(mat_config):
     return mat
 
 
-def create_all_materials():
+def create_all_materials(config):
     """Create all materials for the fighter."""
     materials = {}
-    for mat_name, mat_config in ViperConfig.MATERIALS.items():
+    for mat_name, mat_config in config.materials.items():
         materials[mat_name] = create_material(mat_config)
     print(f"✓ Created {len(materials)} materials")
     return materials
@@ -228,7 +419,7 @@ def create_all_materials():
 
 # ==================== Geometry Generation ====================
 
-def create_hull():
+def create_hull(config):
     """Create the main angular hull with rectangular cross-section and tapered ends."""
     bpy.ops.mesh.primitive_cube_add(size=1)
     hull = bpy.context.active_object
@@ -236,9 +427,9 @@ def create_hull():
 
     # Scale to base dimensions
     hull.scale = (
-        ViperConfig.HULL_WIDTH / 2,
-        ViperConfig.HULL_LENGTH / 2,
-        ViperConfig.HULL_HEIGHT / 2,
+        config.hull_width / 2,
+        config.hull_length / 2,
+        config.hull_height / 2,
     )
     bpy.ops.object.transform_apply(scale=True)
 
@@ -247,15 +438,15 @@ def create_hull():
     bm = bmesh.from_edit_mesh(hull.data)
 
     # Front face vertices (positive Y is forward)
-    front_verts = [v for v in bm.verts if v.co.y > ViperConfig.HULL_LENGTH / 2 - 0.1]
+    front_verts = [v for v in bm.verts if v.co.y > config.hull_length / 2 - 0.1]
     for vert in front_verts:
-        vert.co.x *= ViperConfig.HULL_FRONT_TAPER_WIDTH
-        vert.co.z *= ViperConfig.HULL_FRONT_TAPER_HEIGHT
+        vert.co.x *= config.hull_front_taper_width
+        vert.co.z *= config.hull_front_taper_height
 
     # Rear face vertices
-    rear_verts = [v for v in bm.verts if v.co.y < -ViperConfig.HULL_LENGTH / 2 + 0.1]
+    rear_verts = [v for v in bm.verts if v.co.y < -config.hull_length / 2 + 0.1]
     for vert in rear_verts:
-        vert.co.x *= ViperConfig.HULL_REAR_TAPER_WIDTH
+        vert.co.x *= config.hull_rear_taper_width
 
     bmesh.update_edit_mesh(hull.data)
     bpy.ops.object.mode_set(mode='OBJECT')
@@ -267,29 +458,29 @@ def create_hull():
 
     # Bevel for cross-section edges
     bevel = hull.modifiers.new(name='Bevel', type='BEVEL')
-    bevel.width = ViperConfig.HULL_BEVEL_WIDTH
+    bevel.width = config.hull_bevel_width
     bevel.segments = 1
 
     print("✓ Created angular hull")
     return hull
 
 
-def create_cockpit_canopy():
+def create_cockpit_canopy(config):
     """Create the cockpit canopy with tapered front, positioned at forward 1/3 of fuselage."""
     bpy.ops.mesh.primitive_cube_add(size=1)
     canopy = bpy.context.active_object
     canopy.name = "Cockpit_Canopy"
 
-    # Forward 1/3 of fuselage: center of hull is at Y=0, nose is at Y=+HULL_LENGTH/2
-    # Forward 1/3 position = HULL_LENGTH/2 - HULL_LENGTH/3
-    canopy_y = ViperConfig.HULL_LENGTH / 2 - ViperConfig.HULL_LENGTH / 3
-    canopy_z = ViperConfig.HULL_HEIGHT / 2  # On top of fuselage
+    # Forward 1/3 of fuselage: center of hull is at Y=0, nose is at Y=+hull_length/2
+    # Forward 1/3 position = hull_length/2 - hull_length/3
+    canopy_y = config.hull_length / 2 - config.hull_length / 3
+    canopy_z = config.hull_height / 2  # On top of fuselage
 
     canopy.location = (0, canopy_y, canopy_z)
     canopy.scale = (
-        ViperConfig.COCKPIT_WIDTH / 2,
-        ViperConfig.COCKPIT_LENGTH / 2,
-        ViperConfig.COCKPIT_HEIGHT / 2,
+        config.cockpit_width / 2,
+        config.cockpit_length / 2,
+        config.cockpit_height / 2,
     )
     bpy.ops.object.transform_apply(scale=True, location=False)
 
@@ -299,7 +490,7 @@ def create_cockpit_canopy():
 
     front_verts = [v for v in bm.verts if v.co.y > 0.5]
     for vert in front_verts:
-        vert.co.x *= ViperConfig.COCKPIT_TAPER
+        vert.co.x *= config.cockpit_taper
 
     bmesh.update_edit_mesh(canopy.data)
     bpy.ops.object.mode_set(mode='OBJECT')
@@ -313,7 +504,7 @@ def create_cockpit_canopy():
     return canopy
 
 
-def create_wings():
+def create_wings(config):
     """Create 4 wings in cruciform X-configuration.
 
     Viewed from front/rear, the wings form an X shape:
@@ -326,14 +517,14 @@ def create_wings():
     wings = []
 
     # Wing attachment Y position: 60% back from nose
-    # Nose is at Y = +HULL_LENGTH/2, so 60% back = HULL_LENGTH/2 - 0.6*HULL_LENGTH
-    attach_y = ViperConfig.HULL_LENGTH / 2 - ViperConfig.WING_ATTACH_Y_FRAC * ViperConfig.HULL_LENGTH
+    # Nose is at Y = +hull_length/2, so 60% back = hull_length/2 - 0.6*hull_length
+    attach_y = config.hull_length / 2 - config.wing_attach_y_frac * config.hull_length
 
     wing_configs = [
-        ("Wing_Upper_Right", ViperConfig.WING_ANGLE_UPPER_RIGHT),
-        ("Wing_Upper_Left", ViperConfig.WING_ANGLE_UPPER_LEFT),
-        ("Wing_Lower_Right", ViperConfig.WING_ANGLE_LOWER_RIGHT),
-        ("Wing_Lower_Left", ViperConfig.WING_ANGLE_LOWER_LEFT),
+        ("Wing_Upper_Right", config.wing_angle_upper_right),
+        ("Wing_Upper_Left", config.wing_angle_upper_left),
+        ("Wing_Lower_Right", config.wing_angle_lower_right),
+        ("Wing_Lower_Left", config.wing_angle_lower_left),
     ]
 
     for wing_name, angle_deg in wing_configs:
@@ -345,39 +536,39 @@ def create_wings():
 
         # Create wing as a flat slab: span along X, chord along Y, thin in Z
         wing.scale = (
-            ViperConfig.WING_SPAN / 2,
-            ViperConfig.WING_CHORD_ROOT / 2,
-            ViperConfig.WING_THICKNESS / 2,
+            config.wing_span / 2,
+            config.wing_chord_root / 2,
+            config.wing_thickness / 2,
         )
         bpy.ops.object.transform_apply(scale=True)
 
-        # Edit mode: offset wing so root is at X=0 and tip at X=WING_SPAN,
+        # Edit mode: offset wing so root is at X=0 and tip at X=wing_span,
         # then taper and sweep the tip
         bpy.ops.object.mode_set(mode='EDIT')
         bm = bmesh.from_edit_mesh(wing.data)
 
-        half_span = ViperConfig.WING_SPAN / 2
+        half_span = config.wing_span / 2
 
-        # Shift all vertices so root edge is at X=0, tip at X=WING_SPAN
-        # (default cube after scale has verts at ±half_span)
+        # Shift all vertices so root edge is at X=0, tip at X=wing_span
+        # (default cube after scale has verts at +/-half_span)
         for v in bm.verts:
             v.co.x += half_span
 
-        # Tip verts are now at X near WING_SPAN
-        tip_verts = [v for v in bm.verts if v.co.x > ViperConfig.WING_SPAN - 0.1]
+        # Tip verts are now at X near wing_span
+        tip_verts = [v for v in bm.verts if v.co.x > config.wing_span - 0.1]
 
-        taper_ratio = ViperConfig.WING_CHORD_TIP / ViperConfig.WING_CHORD_ROOT
+        taper_ratio = config.wing_chord_tip / config.wing_chord_root
         for vert in tip_verts:
             # Taper: scale chord (Y) at tip
             vert.co.y *= taper_ratio
             # Sweep: shift tip rearward
-            vert.co.y -= ViperConfig.WING_SWEEP_BACK / 2
+            vert.co.y -= config.wing_sweep_back / 2
 
         bmesh.update_edit_mesh(wing.data)
         bpy.ops.object.mode_set(mode='OBJECT')
 
         # Rotate wing around Y-axis to its X-config angle
-        # R_y(θ): X'=cos(θ)·X, Z'=-sin(θ)·X
+        # R_y(theta): X'=cos(theta)*X, Z'=-sin(theta)*X
         wing.rotation_euler = (0, angle_rad, 0)
 
         # Position at attachment point on fuselage
@@ -387,7 +578,7 @@ def create_wings():
 
         # Bevel modifier for smooth edges
         bevel = wing.modifiers.new(name='Bevel', type='BEVEL')
-        bevel.width = ViperConfig.WING_BEVEL_WIDTH
+        bevel.width = config.wing_bevel_width
         bevel.segments = 1
 
         wings.append(wing)
@@ -396,7 +587,7 @@ def create_wings():
     return wings
 
 
-def create_wing_root_fairings():
+def create_wing_root_fairings(config):
     """Create tapered connecting geometry between each wing root and the fuselage.
 
     Each fairing is a wedge that bridges the visual gap at the wing-fuselage
@@ -404,22 +595,22 @@ def create_wing_root_fairings():
     """
     fairings = []
     attach_y = (
-        ViperConfig.HULL_LENGTH / 2
-        - ViperConfig.WING_ATTACH_Y_FRAC * ViperConfig.HULL_LENGTH
+        config.hull_length / 2
+        - config.wing_attach_y_frac * config.hull_length
     )
 
     wing_configs = [
-        ("Fairing_Upper_Right", ViperConfig.WING_ANGLE_UPPER_RIGHT),
-        ("Fairing_Upper_Left", ViperConfig.WING_ANGLE_UPPER_LEFT),
-        ("Fairing_Lower_Right", ViperConfig.WING_ANGLE_LOWER_RIGHT),
-        ("Fairing_Lower_Left", ViperConfig.WING_ANGLE_LOWER_LEFT),
+        ("Fairing_Upper_Right", config.wing_angle_upper_right),
+        ("Fairing_Upper_Left", config.wing_angle_upper_left),
+        ("Fairing_Lower_Right", config.wing_angle_lower_right),
+        ("Fairing_Lower_Left", config.wing_angle_lower_left),
     ]
 
     # Fairing extends from fuselage center outward past the hull surface.
     # It tapers from hull-sized at the root to wing-sized at the outer edge.
-    fairing_span = ViperConfig.HULL_WIDTH * 0.9  # Extends past hull surface
-    fairing_chord = ViperConfig.WING_CHORD_ROOT * 0.7
-    fairing_thickness = ViperConfig.HULL_HEIGHT * 0.35
+    fairing_span = config.hull_width * 0.9  # Extends past hull surface
+    fairing_chord = config.wing_chord_root * 0.7
+    fairing_thickness = config.hull_height * 0.35
 
     for name, angle_deg in wing_configs:
         angle_rad = math.radians(angle_deg)
@@ -463,46 +654,46 @@ def create_wing_root_fairings():
     return fairings
 
 
-def _get_wing_tip_positions():
+def _get_wing_tip_positions(config):
     """Compute world-space wing tip center positions for weapon barrel placement.
 
     Returns a list of (position_vector, wing_name) tuples, one per wing.
     """
-    attach_y = ViperConfig.HULL_LENGTH / 2 - ViperConfig.WING_ATTACH_Y_FRAC * ViperConfig.HULL_LENGTH
+    attach_y = config.hull_length / 2 - config.wing_attach_y_frac * config.hull_length
 
     wing_angles = [
-        ("Upper_Right", ViperConfig.WING_ANGLE_UPPER_RIGHT),
-        ("Upper_Left", ViperConfig.WING_ANGLE_UPPER_LEFT),
-        ("Lower_Right", ViperConfig.WING_ANGLE_LOWER_RIGHT),
-        ("Lower_Left", ViperConfig.WING_ANGLE_LOWER_LEFT),
+        ("Upper_Right", config.wing_angle_upper_right),
+        ("Upper_Left", config.wing_angle_upper_left),
+        ("Lower_Right", config.wing_angle_lower_right),
+        ("Lower_Left", config.wing_angle_lower_left),
     ]
 
     positions = []
     for name, angle_deg in wing_angles:
         angle_rad = math.radians(angle_deg)
-        # Wing tip is at local +X = WING_SPAN from wing origin after Y-axis rotation
-        # Blender R_y(θ): X' = cos(θ)·X, Z' = -sin(θ)·X
-        tip_x = ViperConfig.WING_SPAN * math.cos(angle_rad)
-        tip_z = -ViperConfig.WING_SPAN * math.sin(angle_rad)
+        # Wing tip is at local +X = wing_span from wing origin after Y-axis rotation
+        # Blender R_y(theta): X' = cos(theta)*X, Z' = -sin(theta)*X
+        tip_x = config.wing_span * math.cos(angle_rad)
+        tip_z = -config.wing_span * math.sin(angle_rad)
         # The wing tip chord center Y is shifted back by half the sweep
-        tip_y = attach_y - ViperConfig.WING_SWEEP_BACK / 2
+        tip_y = attach_y - config.wing_sweep_back / 2
         positions.append((Vector((tip_x, tip_y, tip_z)), name))
 
     return positions
 
 
-def create_weapon_barrels():
+def create_weapon_barrels(config):
     """Create 4 weapon barrels, one per wing tip, extending forward parallel to fuselage."""
     barrels = []
-    tip_positions = _get_wing_tip_positions()
+    tip_positions = _get_wing_tip_positions(config)
 
     for tip_pos, wing_name in tip_positions:
         # Barrel cylinder extends forward from wing tip along Y axis
-        barrel_center_y = tip_pos.y + ViperConfig.WEAPON_BARREL_LENGTH / 2
+        barrel_center_y = tip_pos.y + config.weapon_barrel_length / 2
 
         bpy.ops.mesh.primitive_cylinder_add(
-            radius=ViperConfig.WEAPON_BARREL_RADIUS,
-            depth=ViperConfig.WEAPON_BARREL_LENGTH,
+            radius=config.weapon_barrel_radius,
+            depth=config.weapon_barrel_length,
             vertices=12,
         )
         barrel = bpy.context.active_object
@@ -514,9 +705,9 @@ def create_weapon_barrels():
         barrels.append(barrel)
 
         # Tip sphere with red emission at forward end
-        forward_y = tip_pos.y + ViperConfig.WEAPON_BARREL_LENGTH
+        forward_y = tip_pos.y + config.weapon_barrel_length
         bpy.ops.mesh.primitive_uv_sphere_add(
-            radius=ViperConfig.WEAPON_TIP_RADIUS,
+            radius=config.weapon_tip_radius,
             segments=12,
             ring_count=6,
         )
@@ -530,7 +721,7 @@ def create_weapon_barrels():
     return barrels
 
 
-def create_engines():
+def create_engines(config):
     """Create 2 large cylindrical engine nacelles, side-by-side at fuselage rear.
 
     Each nacelle includes:
@@ -541,28 +732,28 @@ def create_engines():
     - 2-3 detail torus rings along length
     """
     nacelles = []
-    nacelle_radius = ViperConfig.NACELLE_DIAMETER / 2
+    nacelle_radius = config.nacelle_diameter / 2
 
-    # Fuselage rear is at Y = -HULL_LENGTH/2
-    fuselage_rear_y = -ViperConfig.HULL_LENGTH / 2
+    # Fuselage rear is at Y = -hull_length/2
+    fuselage_rear_y = -config.hull_length / 2
 
-    # Nacelle center Y: rear extends NACELLE_EXTEND_BEYOND past fuselage rear
-    # So the nacelle rear face is at fuselage_rear_y - NACELLE_EXTEND_BEYOND
-    # Nacelle center Y = fuselage_rear_y - NACELLE_EXTEND_BEYOND + NACELLE_LENGTH/2
-    nacelle_center_y = fuselage_rear_y - ViperConfig.NACELLE_EXTEND_BEYOND + ViperConfig.NACELLE_LENGTH / 2
+    # Nacelle center Y: rear extends nacelle_extend_beyond past fuselage rear
+    # So the nacelle rear face is at fuselage_rear_y - nacelle_extend_beyond
+    # Nacelle center Y = fuselage_rear_y - nacelle_extend_beyond + nacelle_length/2
+    nacelle_center_y = fuselage_rear_y - config.nacelle_extend_beyond + config.nacelle_length / 2
 
-    nacelle_rear_y = nacelle_center_y - ViperConfig.NACELLE_LENGTH / 2
+    nacelle_rear_y = nacelle_center_y - config.nacelle_length / 2
 
-    nacelle_z = ViperConfig.NACELLE_VERTICAL_OFFSET
+    nacelle_z = config.nacelle_vertical_offset
 
     for side in [-1, 1]:
         side_name = "Right" if side > 0 else "Left"
-        nacelle_x = side * ViperConfig.NACELLE_SPACING / 2
+        nacelle_x = side * config.nacelle_spacing / 2
 
         # Main cylinder body
         bpy.ops.mesh.primitive_cylinder_add(
             radius=nacelle_radius,
-            depth=ViperConfig.NACELLE_LENGTH,
+            depth=config.nacelle_length,
             vertices=24,
         )
         body = bpy.context.active_object
@@ -575,7 +766,7 @@ def create_engines():
         # Rear nozzle torus ring
         bpy.ops.mesh.primitive_torus_add(
             major_radius=nacelle_radius,
-            minor_radius=ViperConfig.NOZZLE_MINOR_RADIUS,
+            minor_radius=config.nozzle_minor_radius,
             major_segments=24,
             minor_segments=12,
         )
@@ -587,7 +778,7 @@ def create_engines():
         nacelles.append(nozzle)
 
         # Exhaust glow circle (ngon fill)
-        exhaust_radius = nacelle_radius * ViperConfig.EXHAUST_RADIUS_FRAC
+        exhaust_radius = nacelle_radius * config.exhaust_radius_frac
         bpy.ops.mesh.primitive_circle_add(
             vertices=24,
             radius=exhaust_radius,
@@ -604,26 +795,26 @@ def create_engines():
     return nacelles
 
 
-def create_dorsal_fin():
+def create_dorsal_fin(config):
     """Create swept dorsal fin directly behind cockpit on top of fuselage."""
     bpy.ops.mesh.primitive_cube_add(size=1)
     fin = bpy.context.active_object
     fin.name = "Dorsal_Fin"
 
     # Position: directly behind cockpit, on top of fuselage
-    # Cockpit center Y = HULL_LENGTH/2 - HULL_LENGTH/3
+    # Cockpit center Y = hull_length/2 - hull_length/3
     # Fin starts right behind cockpit
-    cockpit_y = ViperConfig.HULL_LENGTH / 2 - ViperConfig.HULL_LENGTH / 3
-    cockpit_rear_y = cockpit_y - ViperConfig.COCKPIT_LENGTH / 2
-    fin_center_y = cockpit_rear_y - ViperConfig.FIN_LENGTH / 2
+    cockpit_y = config.hull_length / 2 - config.hull_length / 3
+    cockpit_rear_y = cockpit_y - config.cockpit_length / 2
+    fin_center_y = cockpit_rear_y - config.fin_length / 2
 
-    fin_z = ViperConfig.HULL_HEIGHT / 2 + ViperConfig.FIN_HEIGHT / 2
+    fin_z = config.hull_height / 2 + config.fin_height / 2
 
     fin.location = (0, fin_center_y, fin_z)
     fin.scale = (
-        ViperConfig.FIN_WIDTH / 2,
-        ViperConfig.FIN_LENGTH / 2,
-        ViperConfig.FIN_HEIGHT / 2,
+        config.fin_width / 2,
+        config.fin_length / 2,
+        config.fin_height / 2,
     )
     bpy.ops.object.transform_apply(scale=True, location=False)
 
@@ -635,9 +826,9 @@ def create_dorsal_fin():
     top_verts = [v for v in bm.verts if v.co.z > 0.3]
     for vert in top_verts:
         # Sweep: shift top edge rearward (negative Y)
-        vert.co.y -= ViperConfig.FIN_SWEEP_Y / 2
+        vert.co.y -= config.fin_sweep_y / 2
         # Taper: scale Y to ~50% length at tip
-        vert.co.y *= ViperConfig.FIN_TIP_SCALE
+        vert.co.y *= config.fin_tip_scale
 
     bmesh.update_edit_mesh(fin.data)
     bpy.ops.object.mode_set(mode='OBJECT')
@@ -889,7 +1080,7 @@ def render_preview(fighter_obj, output_dir, hide_objects=None):
 
 # ==================== Validation ====================
 
-def validate_fighter(obj, lod_name):
+def validate_fighter(obj, lod_name, config):
     """Validate fighter meets requirements."""
     print(f"\n=== Validating {lod_name} ===")
 
@@ -899,7 +1090,7 @@ def validate_fighter(obj, lod_name):
 
     # Count triangles
     tri_count = len(mesh.loop_triangles)
-    budget = ViperConfig.POLY_BUDGETS.get(lod_name, 5000)
+    budget = config.poly_budgets.get(lod_name, 5000)
 
     if tri_count <= budget * 1.1:  # Allow 10% over
         print(f"✓ Triangle count: {tri_count} (budget: {budget})")
@@ -930,6 +1121,7 @@ def main():
     # Parse arguments
     parser = argparse.ArgumentParser()
     parser.add_argument('--output-dir', default='', help='Output directory for FBX and renders')
+    parser.add_argument('--spec', default='', help='Path to JSON asset spec file')
 
     # Handle Blender's -- separator
     argv = sys.argv
@@ -941,6 +1133,13 @@ def main():
     args = parser.parse_args(argv)
     output_dir = args.output_dir or os.getcwd()
 
+    # Load config from spec or use defaults
+    if args.spec:
+        config = load_spec(args.spec)
+        print(f"Loaded config from spec: {args.spec}")
+    else:
+        config = ViperConfig()
+
     print("=== Viper-Class Fighter Generation ===")
     print(f"Output directory: {output_dir}")
 
@@ -948,16 +1147,16 @@ def main():
     clear_scene()
 
     # Create materials
-    materials = create_all_materials()
+    materials = create_all_materials(config)
 
     # Generate fighter components
     print("\n--- Building Fighter Components ---")
-    hull = create_hull()
-    canopy = create_cockpit_canopy()
-    wings = create_wings()
-    weapon_barrels = create_weapon_barrels()
-    nacelles = create_engines()
-    fin = create_dorsal_fin()
+    hull = create_hull(config)
+    canopy = create_cockpit_canopy(config)
+    wings = create_wings(config)
+    weapon_barrels = create_weapon_barrels(config)
+    nacelles = create_engines(config)
+    fin = create_dorsal_fin(config)
 
     # Organize components
     objects_dict = {
@@ -984,7 +1183,7 @@ def main():
     # Validate each LOD
     print("\n--- Validation ---")
     for lod_name, lod_obj in lods.items():
-        validate_fighter(lod_obj, lod_name)
+        validate_fighter(lod_obj, lod_name, config)
 
     # Export FBX files
     print("\n--- Exporting FBX ---")

@@ -122,7 +122,8 @@ bpy.ops.object.mode_set(mode='OBJECT')
 
 # Test validation
 print("Testing validation with test object...")
-validate_fighter(test_obj, "LOD0")
+config = ViperConfig()
+validate_fighter(test_obj, "LOD0", config)
 '''.format(script_dir=Path(__file__).parent.parent / "scripts")
 
     # Write temp validation script
